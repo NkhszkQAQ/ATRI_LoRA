@@ -40,3 +40,9 @@ logs/
 
 # 含服务器信息的本地流程文档，不进仓库
 save_Files.md
+
+# 真人聊天语料，只留本地不进仓库
+training/data/corpus/wx_seeds*
+
+# 版权素材（同人表情包）不进仓库
+webapp/mine/webapp/memes/
