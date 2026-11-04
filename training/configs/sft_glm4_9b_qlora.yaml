@@ -1,0 +1,53 @@
+### v6：换基座 GLM-4-9B-0414（QLoRA 4bit，24GB 卡）
+### 与 Qwen 时代的配置有三处硬差异，照抄 Qwen 配置会直接训不动：
+###   1) template 必须是 glm4，不是 qwen3_nothink
+###   2) lora_target 用 all（GLM 注意力层叫 query_key_value/dense，写 q_proj/v_proj 匹配不到任何层）
+###   3) 不能加载 Qwen 的 adapter —— 基座换了，维度和词表都变了，必须从基座重新训
+### 用法：llamafactory-cli train training/configs/sft_glm4_9b_qlora.yaml
+model_name_or_path: /root/autodl-tmp/models/GLM-4-9B-0414
+trust_remote_code: true
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: all
+quantization_bit: 4
+quantization_type: nf4
+double_quantization: true
+### dataset
+dataset_dir: /root/autodl-tmp/atri/data
+dataset: atri_v4_clean
+template: glm4
+cutoff_len: 2048
+overwrite_cache: true
+preprocessing_num_workers: 16
+val_size: 0.08
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 8.0e-5
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+optim: adamw_torch
+dataloader_num_workers: 8
+seed: 42
+### eval / save
+eval_strategy: steps
+eval_steps: 40
+save_strategy: steps
+save_steps: 40
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+logging_steps: 5
+output_dir: /root/autodl-tmp/atri-runs/sft-v6-glm4-9b
+plot_loss: true
+save_total_limit: 3
+overwrite_output_dir: false
+report_to: none

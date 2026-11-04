@@ -1,0 +1,114 @@
+name: atri-companion
+
+networks:
+  atri-companion-net:
+    name: ${ATRI_NETWORK_NAME:-atri-companion-net}
+    driver: bridge
+
+volumes:
+  atri_postgres_data:
+  atri_ollama_data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: atri-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-atri}
+      POSTGRES_USER: ${POSTGRES_USER:-atri}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-atri-db}
+    volumes:
+      - atri_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    networks: [atri-companion-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atri} -d ${POSTGRES_DB:-atri}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:0.17.7}
+    container_name: atri-ollama
+    gpus: all
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: 10m
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      ATRI_MODEL: ${ATRI_MODEL:-qwen3:4b}
+      MODEL_FORCE: ${MODEL_FORCE:-}
+      MODEL_CONFIRM_SECONDS: ${MODEL_CONFIRM_SECONDS:-10}
+    volumes:
+      - atri_ollama_data:/root/.ollama
+      - ./docker/ollama/entrypoint.sh:/entrypoint.sh:ro
+      - ./docker/ollama/select_model.sh:/select_model.sh:ro
+    ports:
+      - "127.0.0.1:${OLLAMA_HOST_PORT:-11435}:11434"
+    networks: [atri-companion-net]
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 20s
+      timeout: 10s
+      retries: 8
+      start_period: 600s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    container_name: atri-api
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-atri}:${POSTGRES_PASSWORD:-change-me-atri-db}@postgres:5432/${POSTGRES_DB:-atri}
+      # 默认走本机 LoRA 服务（scripts/serve_lora.py）；仍可改回 http://ollama:11434
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:8008}
+      ATRI_MODEL: ${ATRI_MODEL:-atri-qwen3-4b-lora}
+      SECRET_KEY: ${SECRET_KEY:-change-me-to-a-long-random-string}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3080}
+      SMTP_ENABLED: ${SMTP_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      PERSONA_CARD_PATH: /app/persona/persona_card.md
+      SYSTEM_PROMPT_PATH: /app/persona/system_prompt.txt
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./persona:/app/persona:ro
+      - ./app:/app/app
+    ports:
+      - "127.0.0.1:${API_PORT:-3081}:8000"
+    networks: [atri-companion-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 25s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+      args:
+        VITE_API_BASE: /api
+    container_name: atri-web
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3080}:80"
+    networks: [atri-companion-net]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

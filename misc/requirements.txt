@@ -1,0 +1,18 @@
+# 数据与生成脚本
+python-docx>=1.1
+openai>=1.40
+# 训练（建议单独 venv；LLaMA-Factory 请按其 README 安装）
+llamafactory>=0.9.3
+torch>=2.5
+transformers>=4.51
+peft>=0.14
+trl>=0.15
+accelerate>=1.0
+datasets>=3.0
+deepspeed>=0.15
+flash-attn; platform_system=="Linux"
+# 推理/生成
+vllm>=0.8
+# 评估
+pandas
+tqdm

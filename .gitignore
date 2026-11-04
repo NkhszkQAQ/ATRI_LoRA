@@ -1,0 +1,42 @@
+private/
+runs/
+models/
+release/*.safetensors
+*.safetensors
+*.bin
+*.gguf
+*.docx
+*.pt
+__pycache__/
+.env
+*.log
+.venv/
+wandb/
+.DS_Store
+Thumbs.db
+node_modules/
+web/dist/
+web/node_modules/
+*.pyc
+.pytest_cache/
+
+.admin_bootstrap.tmp
+.venv-train/
+.venv*
+*.zip
+# Colab 用的模型权重包，只存本地
+colab/*.zip
+
+# ==== 个人内容，不进仓库 ====
+AGENTS.md
+docs/我的东西说明.md
+colab/*/v0.1/
+
+# ==== 个人日志，不进仓库 ====
+logs/
+
+# 编辑前备份文件，不进仓库
+*.bak-*
+
+# 含服务器信息的本地流程文档，不进仓库
+save_Files.md

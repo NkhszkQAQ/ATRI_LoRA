@@ -1,0 +1,51 @@
+### v6 低显存版：GLM-4-9B-0414，16GB 卡（T4 / 4060Ti / 4080 laptop）
+### 与 24GB 版的差别只有三处：cutoff_len、batch、 accum —— 有效 batch 仍是 16
+### 如果 16GB 还是 OOM：先把 cutoff_len 降到 1024，再把 batch 降到 1
+### 用法：llamafactory-cli train training/configs/sft_glm4_9b_qlora_16g.yaml
+model_name_or_path: /root/autodl-tmp/models/GLM-4-9B-0414
+trust_remote_code: true
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: all
+quantization_bit: 4
+quantization_type: nf4
+double_quantization: true
+### dataset
+dataset_dir: /root/autodl-tmp/atri/data
+dataset: atri_v4_clean
+template: glm4
+cutoff_len: 1536
+overwrite_cache: true
+preprocessing_num_workers: 8
+val_size: 0.08
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 8.0e-5
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+optim: adamw_torch
+dataloader_num_workers: 4
+seed: 42
+### eval / save
+eval_strategy: steps
+eval_steps: 40
+save_strategy: steps
+save_steps: 40
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+logging_steps: 5
+output_dir: /root/autodl-tmp/atri-runs/sft-v6-glm4-9b-16g
+plot_loss: true
+save_total_limit: 3
+overwrite_output_dir: false
+report_to: none

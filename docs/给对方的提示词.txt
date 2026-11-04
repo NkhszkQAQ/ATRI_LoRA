@@ -1,0 +1,24 @@
+你是训练助手。我发来一个 ATRI 陪伴模型的 QLoRA 交接包（解压后见 README_续训说明.md）。
+
+任务：在现有 LoRA 权重上继续 SFT，不要从零训，也不要用 resume_from_checkpoint。
+
+固定约束：
+1. 基座模型：Qwen/Qwen3-4B（可换成等价本地路径）
+2. 加载本包 adapter：adapter_name_or_path 指向解压后的 ./adapter
+3. LoRA 必须保持：r=32, alpha=64, target=q_proj,v_proj（与 adapter_config.json 一致）
+4. quantization_bit: 4，template: qwen3_nothink
+5. 数据：dataset_dir=./data，dataset=atri_v2_pilot（或清洗后在 dataset_info.json 新注册）
+6. 用包内 sft_continue_from_pilot.yaml 起步；按机器显存改 cutoff_len / batch / grad_accum
+7. 输出写到新目录，例如 ./runs/atri-companion-qwen3-4b-sft-v2-continue
+
+执行步骤：
+- 检查 CUDA 与磁盘
+- 确认 Qwen3-4B 可加载
+- 必要时先按 README 清洗 {{user}} / 旧 system，再开训
+- 运行：llamafactory-cli train sft_continue_from_pilot.yaml
+- 训完汇报 train_loss、输出路径、是否成功保存 adapter_model.safetensors
+
+已知数据问题（下一轮最好先修）：
+- 部分 GPT 回复含字面量 {{user}}先生
+- 多数 system 仍是旧模板，且 {{memory}} 未填充
+- 样本偏短、multi_turn 很少

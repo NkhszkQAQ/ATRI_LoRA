@@ -1,0 +1,50 @@
+### v6-B：多轮上下文组（atri_windows_v6，1~4 轮，62% 带旁白场景）
+### 与 v6-A 超参完全一致，唯一变量 = 数据有没有上下文。
+### 数据来源：training/scripts/22_build_context_windows.py 从原作剧本重建（1263 条）
+model_name_or_path: /root/autodl-tmp/models/Qwen2.5-7B-Instruct
+trust_remote_code: true
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: q_proj,v_proj
+quantization_bit: 4
+quantization_type: nf4
+double_quantization: true
+### dataset
+dataset_dir: /root/autodl-tmp/atri/data
+dataset: atri_windows_v6
+template: qwen
+cutoff_len: 2048
+overwrite_cache: true
+preprocessing_num_workers: 8
+val_size: 0.08
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-4
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+optim: adamw_torch
+dataloader_num_workers: 8
+seed: 42
+### eval / save
+eval_strategy: steps
+eval_steps: 25
+save_strategy: steps
+save_steps: 25
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+logging_steps: 5
+output_dir: /root/autodl-tmp/atri-runs/sft-7b-context
+plot_loss: true
+save_total_limit: 3
+overwrite_output_dir: false
+report_to: none

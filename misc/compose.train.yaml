@@ -1,0 +1,23 @@
+# 一次性训练：docker compose -f compose.train.yaml run --rm train
+services:
+  train:
+    image: hiyouga/llamafactory:latest
+    gpus: all
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - hf_cache:/root/.cache/huggingface
+    environment:
+      - HUGGINGFACE_HUB_CACHE=/root/.cache/huggingface
+      - HF_HOME=/root/.cache/huggingface
+      - DISABLE_VERSION_CHECK=1
+    # 默认跑 3 epoch QLoRA；可覆盖 command
+    command:
+      [
+        "llamafactory-cli",
+        "train",
+        "/workspace/configs/sft_qwen3_4b_qlora.yaml",
+      ]
+
+volumes:
+  hf_cache:

@@ -1,0 +1,46 @@
+### 在 V2 pilot adapter 上继续新一轮 SFT（给其他服务器用）
+### 用法：把本包解压后，按需改路径，然后：
+###   llamafactory-cli train sft_continue_from_pilot.yaml
+### model
+model_name_or_path: Qwen/Qwen3-4B
+adapter_name_or_path: ./adapter
+trust_remote_code: true
+quantization_bit: 4
+quantization_method: bitsandbytes
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: q_proj,v_proj
+### dataset
+dataset_dir: ./data
+# 已清洗版：system 换现行模板、{{memory}} 填实、回复里的 {{user}} 换成统一假名
+# 想跑未清洗基线就换回 atri_v2_pilot
+dataset: atri_v2_pilot_clean
+template: qwen3_nothink
+cutoff_len: 1024
+overwrite_cache: true
+preprocessing_num_workers: 4
+val_size: 0.03
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 5.0e-5
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+bf16: true
+gradient_checkpointing: true
+optim: adamw_torch
+### eval / save
+eval_strategy: steps
+eval_steps: 50
+save_steps: 50
+logging_steps: 5
+output_dir: ./runs/atri-companion-qwen3-4b-sft-v2-continue
+plot_loss: true
+save_total_limit: 3
+overwrite_output_dir: false
