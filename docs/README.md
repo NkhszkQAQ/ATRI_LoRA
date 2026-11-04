@@ -3,7 +3,6 @@
 README.md             项目总说明
 README_续训说明.md    交接包说明
 DISCLAIMER.md         免责声明
-LICENSE               开源协议
 给对方的提示词.txt    交接备注
 我的东西说明.md       之前整理时写的分类说明（已过时，可忽略）
 项目文档/             项目自带的技术文档

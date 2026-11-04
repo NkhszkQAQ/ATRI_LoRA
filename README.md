@@ -6,12 +6,12 @@
 
 | 项 | 值 |
 |---|---|
-| 基座 | `Qwen/Qwen3-4B` |
+| 基座 | v1.1 起 `Qwen/Qwen3-8B`；v1.0 及以前 `Qwen/Qwen3-4B` |
 | 微调 | QLoRA，LoRA r=32 / alpha=64 / target=q_proj,v_proj |
-| 产物 | `adapter_model.safetensors`，约 45 MB |
+| 产物 | `adapter_model.safetensors`，4B 版约 45 MB / 8B 版约 61 MB |
 | 训练数据 | v0.9-Beta：原作剧本提取 + 人工构造，1,448 条 / 约 42,500 字；v1.0 起另加多轮对话，其用户侧文本来自开发者本人聊天记录的脱敏片段，角色回复由 Claude 生成。训练数据不随仓库发布 |
 | 推理精度 | fp16 / 4bit nf4 |
-| 显存需求 | 4bit 约 2.5 GB，fp16 约 8 GB |
+| 显存需求 | 4bit 约 2.5 GB（4B）/ 6 GB（8B） |
 
 ## 使用
 
@@ -28,8 +28,10 @@ cd ATRI_LoRA
 
 | 版本 | 说明 | 资产 |
 |---|---|---|
-| [v1.0-R](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-R)（推荐） | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
-| [v1.0-C](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-C) | 更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
+| [v1.1-8B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.1-8B)（推荐） | 8B 底座，招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-8B.zip` |
+| [v1.1-DT](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.1-DT) | 带思考链，实验版（已知问题见说明） | `atri_adapter_v1.1-DT.zip` |
+| [v1.0-R](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-R) | 4B 底座，贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
+| [v1.0-C](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-C) | 4B 底座，更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
 | [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | 原作剧本训练版，Colab notebook 默认加载 | `atri_adapter_v5.zip` |
 | [v0.1](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.1) | 早期推理版 | `atri_adapter.zip` |
 
@@ -111,4 +113,5 @@ misc/              其他（docker / compose / requirements）
 
 ## License
 
-见 [docs/LICENSE](docs/LICENSE)。
+代码与配置部分采用 Apache License 2.0，见 [LICENSE](LICENSE)。
+该协议只覆盖本仓库的代码与配置，**不覆盖原作素材**（原作台词、角色立绘、同人表情包等），这些素材的版权归原权利人所有。
