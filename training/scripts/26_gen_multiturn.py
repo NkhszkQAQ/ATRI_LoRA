@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 SEEDS = ROOT / "training/data/corpus/wx_seeds_clean.jsonl"
 PERSONA = ROOT / "persona/character_profile.md"
 OUT = ROOT / "training/data/v2/pilot/atri_multiturn_v10.jsonl"
-API = "https://api.gpt.ge/v1/chat/completions"
+API = os.environ.get("LLM_API_URL", "")  # OpenAI 兼容的 chat/completions 地址
 MODEL = "claude-sonnet-5-5"
 
 # 精简角色设定（完整档案太长，这里给生成用的规则摘要）
@@ -34,12 +34,7 @@ RULES = """要求：
 
 
 def load_key():
-    env = {}
-    for line in open(os.path.expanduser("~/.dsh/.env"), encoding="utf-8"):
-        if "=" in line:
-            k, v = line.strip().split("=", 1)
-            env[k] = v
-    return env.get("V_API_KEY")
+    return os.environ.get("LLM_API_KEY")
 
 
 def build_prompt(seed, intent):
@@ -96,7 +91,7 @@ def main():
 
     key = load_key()
     if not key:
-        sys.exit("找不到 V_API_KEY（~/.dsh/.env）")
+        sys.exit("找不到 LLM_API_KEY（并检查 LLM_API_URL）")
     system = load_persona()
     results, failed = [], 0
 

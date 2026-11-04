@@ -1,0 +1,36 @@
+### 8B 角色底座：1448 条原作台词 + 921 条 Claude 生成多轮（合并 2365 条）
+### 用户判定 8B 直接上 thinking 角色味不够 → 先单独训角色底子，再往上叠 thinking
+model_name_or_path: /root/autodl-tmp/models/Qwen3-8B
+trust_remote_code: true
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: q_proj,v_proj
+quantization_bit: 4
+quantization_type: nf4
+double_quantization: true
+### dataset
+dataset_dir: /root/autodl-tmp/atri/data_r
+dataset: atri_8b_base
+template: qwen3_nothink
+cutoff_len: 2048
+overwrite_cache: true
+preprocessing_num_workers: 16
+val_size: 0.02
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 1.5e-4
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+logging_steps: 5
+save_steps: 150
+save_total_limit: 2
+output_dir: /root/autodl-tmp/atri-runs/sft8b-base
+overwrite_output_dir: true

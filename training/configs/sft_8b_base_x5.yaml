@@ -1,0 +1,33 @@
+### 8B 角色底座（招牌反应 14 条 ×5 倍加权）：1448 台词 + 921 Claude 多轮
+### Claude 建议：14 条纯复制 5 倍，占比约 3%，每条曝光 ~10 次（≤8~10 上限内）
+model_name_or_path: /root/autodl-tmp/models/Qwen3-8B
+trust_remote_code: true
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target: q_proj,v_proj
+quantization_bit: 4
+quantization_type: nf4
+double_quantization: true
+dataset_dir: /root/autodl-tmp/atri/data_r
+dataset: atri_8b_base_x5
+template: qwen3_nothink
+cutoff_len: 2048
+overwrite_cache: true
+preprocessing_num_workers: 16
+val_size: 0.02
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 1.5e-4
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+logging_steps: 5
+save_steps: 150
+save_total_limit: 2
+output_dir: /root/autodl-tmp/atri-runs/sft8b-base-x5
+overwrite_output_dir: true

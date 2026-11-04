@@ -1,6 +1,6 @@
 # ATRI LoRA
 
-基于《ATRI -My Dear Moments-》角色亚托莉的 Qwen3-4B 陪伴聊天 LoRA——权重、训练脚本与 Colab 推理 notebook。
+基于《ATRI -My Dear Moments-》角色亚托莉的 Qwen3 陪伴聊天 LoRA（4B / 8B）——权重、训练脚本与 Colab 推理 notebook。
 
 ## 规格
 
@@ -81,7 +81,28 @@ v5 训练流程：
 2. 从 v4 续训 4 epoch（累计 6）
 3. 4bit nf4 量化 + gradient_checkpointing，batch 8 × grad_accum 2
 
-后续 v1.0 版本在脱敏语料上继续训，具体见对应 Release 说明。
+v1.1 起换用 `Qwen/Qwen3-8B` 底座，配置同样在 `training/configs/`：
+
+- `sft_8b_base_x5.yaml`：1,448 条原作台词 + 921 条多轮对话，招牌反应样本 ×5 加权，`qwen3_nothink` 模板。v1.1-R 的训练设定与它一致。
+- `sft_8b_c_think*.yaml`、`sft_8b_r_think*.yaml`、`sft_c_think*.yaml`、`sft_r_think*.yaml`：加训内心独白的实验配置，需要 `qwen3` 模板并开启 `enable_thinking`。v1.1-DT 来自这一类实验，仓库里保留了多份尝试，不保证与发布的权重一一对应。
+
+```bash
+llamafactory-cli train training/configs/sft_8b_base_x5.yaml
+```
+
+v1.0 及以后的版本在脱敏语料上训练，具体见对应 Release 说明。训练数据不随仓库发布，配置里的 `dataset` 名称需要你自己准备同名数据集并在 `training/data/dataset_info.json` 注册。
+
+## 推理服务
+
+`tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口，通过环境变量指定底座和 adapter：
+
+```bash
+python tools/serve_v1_1_8b.py
+```
+
+`tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
+
+`training/scripts/27_gen_thinking.py` 用于生成内心独白数据，需要自备 OpenAI 兼容接口：设置环境变量 `LLM_API_URL`、`LLM_API_KEY`。
 
 ## 目录结构
 
