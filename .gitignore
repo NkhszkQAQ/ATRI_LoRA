@@ -46,3 +46,8 @@ training/data/corpus/wx_seeds*
 
 # 版权素材（同人表情包）不进仓库
 webapp/mine/webapp/memes/
+
+# 训练数据不进仓库
+training/data/**/*.jsonl
+training/data/**/*.json
+!training/data/dataset_info.json
