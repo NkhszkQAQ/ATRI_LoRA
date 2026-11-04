@@ -26,16 +26,20 @@ cd ATRI_LoRA
 
 权重放在 GitHub Releases，不进 git：
 
-| 版本 | 说明 | 资产 |
-|---|---|---|
-| [v1.1-8B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.1-8B)（推荐） | 8B 底座，招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-8B.zip` |
-| [v1.1-DT](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.1-DT) | 带思考链，实验版（已知问题见说明） | `atri_adapter_v1.1-DT.zip` |
-| [v1.0-R](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-R) | 4B 底座，贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
-| [v1.0-C](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v1.0-C) | 4B 底座，更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
-| [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | 原作剧本训练版，Colab notebook 默认加载 | `atri_adapter_v5.zip` |
-| [v0.1](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.1) | 早期推理版 | `atri_adapter.zip` |
+按底座模型分 Release，点进去选具体版本：
 
-均为约 42–44 MB 的 zip，解压后得到 `adapter/`（`adapter_model.safetensors` + `adapter_config.json`）。
+| Release | 版本 | 说明 | 资产 |
+|---|---|---|---|
+| [Qwen3-8B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-8B) | v1.1-R（推荐） | 招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-R.zip` |
+| | v1.1-DT | 带思考链，实验版（已知问题见说明） | `atri_adapter_v1.1-DT.zip` |
+| [Qwen3-4B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-4B) | v1.0-R | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
+| | v1.0-C | 更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
+| [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | v0.9-Beta | 原作剧本训练版，Colab notebook 默认加载 | `atri_adapter_v5.zip` |
+| [v0.1](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.1) | v0.1 | 早期推理版 | `atri_adapter.zip` |
+
+版本后缀：C = Classic，R = Recommended，DT = DeepThinking，Beta = 测试版。
+
+4B 版约 42–44 MB、8B 版约 54 MB 的 zip，解压后得到 `adapter/`（`adapter_model.safetensors` + `adapter_config.json`）。
 
 ### 3. 在 Colab 运行
 
