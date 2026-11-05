@@ -1,61 +1,92 @@
+<div align="center">
+
 # ATRI LoRA
 
-基于《ATRI -My Dear Moments-》角色亚托莉的 Qwen3 陪伴聊天 LoRA（4B / 8B）——权重、训练脚本与 Colab 推理 notebook。
+**「我是高性能的嘛！」**
 
-## 规格
+基于《ATRI -My Dear Moments-》角色亚托莉的 Qwen3 陪伴聊天 LoRA
 
-| 项 | 值 |
-|---|---|
-| 基座 | v1.1 起 `Qwen/Qwen3-8B`；v1.0 及以前 `Qwen/Qwen3-4B` |
-| 微调 | QLoRA，LoRA r=32 / alpha=64 / target=q_proj,v_proj |
-| 产物 | `adapter_model.safetensors`，4B 版约 45 MB / 8B 版约 61 MB |
-| 训练数据 | v0.9-Beta：原作剧本提取 + 人工构造，1,448 条 / 约 42,500 字；v1.0 起另加多轮对话，其用户侧文本来自开发者本人聊天记录的脱敏片段，角色回复由 Claude 生成。训练数据不随仓库发布 |
-| 推理精度 | fp16 / 4bit nf4 |
-| 显存需求 | 4bit 约 2.5 GB（4B）/ 6 GB（8B） |
+权重 · 训练配置 · 推理服务 · Colab 一键体验
 
-## 使用
+[![Stars](https://img.shields.io/github/stars/NkhszkQAQ/ATRI_LoRA?style=flat-square&logo=github&color=f4b8c5)](https://github.com/NkhszkQAQ/ATRI_LoRA/stargazers)
+[![Release](https://img.shields.io/github/v/release/NkhszkQAQ/ATRI_LoRA?style=flat-square&color=89c4e1&label=latest)](https://github.com/NkhszkQAQ/ATRI_LoRA/releases)
+[![License](https://img.shields.io/badge/code-Apache--2.0-a5d6a7?style=flat-square)](LICENSE)
+[![Base](https://img.shields.io/badge/base-Qwen3--4B%20%7C%208B-b39ddb?style=flat-square)](https://huggingface.co/Qwen)
+[![Colab](https://img.shields.io/badge/Open%20in-Colab-f9ab00?style=flat-square&logo=googlecolab&logoColor=white)](colab/ATRI_Colab_v5.ipynb)
 
-### 1. 克隆仓库
+[快速开始](#-快速开始) · [版本选择](#-版本选择) · [训练](#-自己训练) · [推理服务](#-推理服务) · [已知限制](#-已知限制) · [English](#english)
+
+</div>
+
+---
+
+## ✨ 特点
+
+- **两档底座，按显卡挑**：4B 版 4bit 量化约 2.5 GB 显存，8B 版约 6 GB，消费级显卡和 Colab 免费 T4 都能跑
+- **轻量 adapter**：只发 LoRA 权重，4B 版约 45 MB、8B 版约 61 MB，底座自动从 Hugging Face 拉
+- **Colab 零配置体验**：上传 notebook、点运行，几分钟后拿到一个能直接聊天的网页链接
+- **OpenAI 兼容接口**：`tools/serve_v1_1_8b.py` 直接接 AstrBot、NextChat、各种 QQ / 微信机器人框架
+- **训练全流程公开**：数据清洗、生成、评估脚本和 LLaMA-Factory 配置都在仓库里，可以复现，也可以拿去训你自己的角色
+- **思考链实验版**：v1.1-DT 先在内心独白里想，再开口回答
+
+## 🚀 快速开始
+
+### 方式一：Colab（推荐新手）
+
+1. 打开 [colab.research.google.com](https://colab.research.google.com)，`File → Upload notebook`，选 [`colab/ATRI_Colab_v5.ipynb`](colab/ATRI_Colab_v5.ipynb)
+2. `Runtime → Change runtime type` 选 **T4 GPU**
+3. 依次运行所有单元格
+4. 最后一格会输出 `https://xxx.trycloudflare.com`，浏览器打开就能聊
+
+> [!TIP]
+> 第 3 格会用 Colab Secrets 里的 `GH_TOKEN` 从 Release 自动下载 adapter（`v0.9-Beta`）。
+> 本地跑 `gh auth token` 拿到 token，在 Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN` 并勾选 Notebook access。
+> 不配也能跑，会回退成手动上传 zip。首次运行约 5–8 分钟，主要花在下载底座模型。
+
+### 方式二：本地 / 服务器
 
 ```bash
 git clone https://github.com/NkhszkQAQ/ATRI_LoRA.git
 cd ATRI_LoRA
+pip install torch transformers peft bitsandbytes accelerate fastapi uvicorn
+
+# 从 Releases 下载 adapter 并解压，得到 adapter/（adapter_model.safetensors + adapter_config.json）
+export ATRI_BASE=Qwen/Qwen3-8B
+export ATRI_ADAPTER=./adapter
+export ATRI_SYSTEM=./persona/system_prompt.txt
+python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 ```
 
-### 2. 下载权重
+## 📦 版本选择
 
-权重放在 GitHub Releases，不进 git：
+权重放在 [GitHub Releases](https://github.com/NkhszkQAQ/ATRI_LoRA/releases)，按底座模型分组：
 
-按底座模型分 Release，点进去选具体版本：
-
-| Release | 版本 | 说明 | 资产 |
+| 底座 | 版本 | 一句话 | 资产 |
 |---|---|---|---|
-| [Qwen3-8B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-8B) | v1.1-R（推荐） | 招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-R.zip` |
-| | v1.1-DT | 带思考链，实验版（已知问题见说明） | `atri_adapter_v1.1-DT.zip` |
-| [Qwen3-4B](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-4B) | v1.0-R | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
+| [**Qwen3-8B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-8B) | **v1.1-R** ⭐ 推荐 | 招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-R.zip` |
+| | v1.1-DT | 带思考链，实验版（已知问题见 Release 说明） | `atri_adapter_v1.1-DT.zip` |
+| [**Qwen3-4B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-4B) | v1.0-R | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
 | | v1.0-C | 更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
 | [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | v0.9-Beta | 原作剧本训练版，Colab notebook 默认加载 | `atri_adapter_v5.zip` |
 | [v0.1](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.1) | v0.1 | 早期推理版 | `atri_adapter.zip` |
 
-版本后缀：C = Classic，R = Recommended，DT = DeepThinking，Beta = 测试版。
+<sub>后缀：**C** = Classic · **R** = Recommended · **DT** = DeepThinking · **Beta** = 测试版</sub>
 
-4B 版约 42–44 MB、8B 版约 54 MB 的 zip，解压后得到 `adapter/`（`adapter_model.safetensors` + `adapter_config.json`）。
+**怎么选？** 显存 ≥ 6 GB 选 **v1.1-R**；只有 4 GB 左右或在 Colab 上选 **v1.0-R**；想看她"心里在想什么"试试 **v1.1-DT**。
 
-### 3. 在 Colab 运行
+## 🔧 规格
 
-1. 打开 [colab.research.google.com](https://colab.research.google.com)
-2. `File → Upload notebook`，选择 `colab/ATRI_Colab_v5.ipynb`
-3. `Runtime → Change runtime type`，选择 T4 GPU
-4. 依次运行代码单元格；第 3 格会先用 Colab Secrets 里的 `GH_TOKEN` 从 Release 自动下载 adapter（`v0.9-Beta`），没配 token 就回退成手动上传 zip
-5. 最后一个单元格输出 `https://xxx.trycloudflare.com`，浏览器打开
+| 项 | 值 |
+|---|---|
+| 底座 | v1.1 起 `Qwen/Qwen3-8B`；v1.0 及以前 `Qwen/Qwen3-4B` |
+| 微调方式 | QLoRA，r=32 / alpha=64 / target=`q_proj,v_proj` |
+| 产物 | `adapter_model.safetensors`，4B 版约 45 MB / 8B 版约 61 MB |
+| 推理精度 | fp16 / 4bit nf4 |
+| 显存需求 | 4bit 约 2.5 GB（4B）/ 6 GB（8B） |
+| 训练数据 | v0.9-Beta：原作剧本提取 + 人工构造，1,448 条 / 约 42,500 字；v1.0 起另加多轮对话，其用户侧文本来自开发者本人聊天记录的脱敏片段，角色回复由 Claude 生成。**训练数据不随仓库发布** |
 
-想走自动下载：本地跑 `gh auth token` 拿到 `gho_...`，Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN`，勾选 Notebook access。不配也能跑，只是要手动传 zip。
-
-首次运行约 5-8 分钟，主要耗时在下载基座模型。
-
-## 推理参数
-
-`colab/ATRI_Colab_v5.ipynb` 中的默认值：
+<details>
+<summary><b>默认推理参数</b>（<code>colab/ATRI_Colab_v5.ipynb</code>）</summary>
 
 ```yaml
 temperature:        0.85
@@ -67,76 +98,116 @@ do_sample:          true
 
 后端为 FastAPI，流式输出（`TextIteratorStreamer`），通过 `cloudflared` 暴露公网地址。
 
-## 训练
+</details>
 
-配置文件在 `training/configs/`，使用 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)：
+## 🧪 自己训练
+
+基于 [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)，配置全在 [`training/configs/`](training/configs/)：
 
 ```bash
+# v1.1（8B）
+llamafactory-cli train training/configs/sft_8b_base_x5.yaml
+
+# v0.9（4B）
 llamafactory-cli train training/configs/sft_v5_deep.yaml
 ```
 
-v5 训练流程：
+<details>
+<summary><b>v1.1 配置对照</b></summary>
 
-1. 从基座训练 2 epoch
+| 配置 | 说明 |
+|---|---|
+| `sft_8b_base_x5.yaml` | 1,448 条原作台词 + 921 条多轮对话，招牌反应样本 ×5 加权，`qwen3_nothink` 模板。v1.1-R 的训练设定与它一致 |
+| `sft_8b_c_think*.yaml`<br>`sft_8b_r_think*.yaml`<br>`sft_c_think*.yaml`<br>`sft_r_think*.yaml` | 加训内心独白的实验配置，需要 `qwen3` 模板并开启 `enable_thinking`。v1.1-DT 来自这一类实验，仓库里保留了多份尝试，不保证与发布的权重一一对应 |
+
+</details>
+
+<details>
+<summary><b>v0.9 训练流程</b></summary>
+
+1. 从底座训练 2 epoch
 2. 从 v4 续训 4 epoch（累计 6）
 3. 4bit nf4 量化 + gradient_checkpointing，batch 8 × grad_accum 2
 
-v1.1 起换用 `Qwen/Qwen3-8B` 底座，配置同样在 `training/configs/`：
+</details>
 
-- `sft_8b_base_x5.yaml`：1,448 条原作台词 + 921 条多轮对话，招牌反应样本 ×5 加权，`qwen3_nothink` 模板。v1.1-R 的训练设定与它一致。
-- `sft_8b_c_think*.yaml`、`sft_8b_r_think*.yaml`、`sft_c_think*.yaml`、`sft_r_think*.yaml`：加训内心独白的实验配置，需要 `qwen3` 模板并开启 `enable_thinking`。v1.1-DT 来自这一类实验，仓库里保留了多份尝试，不保证与发布的权重一一对应。
+> [!NOTE]
+> 训练数据不随仓库发布。配置里的 `dataset` 名称需要你自己准备同名数据集，并在 `training/data/dataset_info.json` 注册。
+> `training/scripts/27_gen_thinking.py` 用于生成内心独白数据，需要自备 OpenAI 兼容接口：设置环境变量 `LLM_API_URL`、`LLM_API_KEY`。
 
-```bash
-llamafactory-cli train training/configs/sft_8b_base_x5.yaml
-```
+## 🛰️ 推理服务
 
-v1.0 及以后的版本在脱敏语料上训练，具体见对应 Release 说明。训练数据不随仓库发布，配置里的 `dataset` 名称需要你自己准备同名数据集并在 `training/data/dataset_info.json` 注册。
+`tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口（`/v1/chat/completions`，支持流式），通过环境变量配置：
 
-## 推理服务
+| 变量 | 作用 | 默认 |
+|---|---|---|
+| `ATRI_BASE` | 底座模型路径或 HF 名称 | 需自行设置 |
+| `ATRI_ADAPTER` | adapter 目录 | 需自行设置 |
+| `ATRI_SYSTEM` | system prompt 文件 | 需自行设置 |
+| `ATRI_PORT` | 监听端口 | `8003` |
+| `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.1-8B` |
+| `ATRI_SEED` | 随机种子 | `20261104` |
 
-`tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口，通过环境变量指定底座和 adapter：
-
-```bash
-python tools/serve_v1_1_8b.py
-```
+另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
 
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
 
-`training/scripts/27_gen_thinking.py` 用于生成内心独白数据，需要自备 OpenAI 兼容接口：设置环境变量 `LLM_API_URL`、`LLM_API_KEY`。
-
-## 目录结构
+## 📁 目录结构
 
 ```
-training/          训练
-  data/            数据集（jsonl）
-  scripts/         提取、清洗、生成、评估脚本
-  configs/         LLaMA-Factory 训练配置
-  eval/            回归评估题集
-persona/           人设（system_prompt.txt + persona_card.md）
-webapp/            自建聊天前端
-backend/           FastAPI 后端服务
-colab/             Colab notebook
-local/             本地运行（Mac）
-models/            训练好的 adapter
-archive/           按日期归档
-docs/              文档
-misc/              其他（docker / compose / requirements）
+training/
+  scripts/     提取、清洗、生成、评估脚本
+  configs/     LLaMA-Factory 训练配置
+  eval/        回归评估题集
+persona/       人设（system_prompt.txt + persona_card.md）
+tools/         推理服务、命令行 / 网页聊天
+colab/         Colab notebook
+local/         本地运行（Mac）
+webapp/        自建聊天前端
+backend/       FastAPI 后端（登录 + 数据库 + 管理后台的完整版）
+archive/       按日期归档
+docs/          文档
+misc/          docker / compose / requirements
 ```
 
-## 已知限制
+## ⚠️ 已知限制
 
-| 项 | 数据 |
+| 项 | 现状 |
 |---|---|
-| 称呼出现率 | 原作台词 24.3%、训练数据（v4_clean）32.2%，model 输出低于该值。system prompt 已加强制规则，4B 模型遵循度有限 |
+| 称呼出现率 | 原作台词 24.3%、训练数据（v4_clean）32.2%，模型输出低于该值。system prompt 已加强制规则，4B 模型遵循度有限 |
 | 省略号率 | 原作 42.5%，训练数据 40.5%，模型输出约 10% |
-| 场景区分 | 原作日常/战斗/回忆场景语言风格不同，当前按混合比例训练 |
+| 场景区分 | 原作日常 / 战斗 / 回忆场景语言风格不同，当前按混合比例训练 |
 | 安全拒绝 | 敏感场景拒绝表达弱于 v2.2 |
 
-## 声明
+欢迎在 [Issues](https://github.com/NkhszkQAQ/ATRI_LoRA/issues) 反馈问题、分享对话截图或提改进建议。
 
-个人学习用途。与《ATRI -My Dear Moments-》版权方无关，原作素材不得用于商业用途。详见 [docs/DISCLAIMER.md](docs/DISCLAIMER.md)。
+## English
 
-## License
+**ATRI LoRA** is a fan-made LoRA adapter that turns Qwen3 (4B / 8B) into a companion chatbot modeled on Atri from the visual novel *ATRI -My Dear Moments-*. The repo ships adapter weights (via Releases), LLaMA-Factory training configs, data-processing scripts, an OpenAI-compatible inference server and a one-click Colab notebook. The model mainly speaks Chinese.
 
-代码与配置部分采用 Apache License 2.0，见 [LICENSE](LICENSE)。
-该协议只覆盖本仓库的代码与配置，**不覆盖原作素材**（原作台词、角色立绘、同人表情包等），这些素材的版权归原权利人所有。
+- **Quick try**: upload `colab/ATRI_Colab_v5.ipynb` to Colab, pick a T4 GPU, run all cells.
+- **Recommended weights**: `v1.1-R` on Qwen3-8B (~6 GB VRAM in 4-bit); `v1.0-R` on Qwen3-4B (~2.5 GB).
+- **Serve**: `python tools/serve_v1_1_8b.py` with `ATRI_BASE` / `ATRI_ADAPTER` / `ATRI_SYSTEM` set.
+
+Unofficial, non-commercial fan project. See [docs/DISCLAIMER.md](docs/DISCLAIMER.md).
+
+## 📜 声明与许可
+
+个人学习用途，**与《ATRI -My Dear Moments-》版权方无关**，原作素材不得用于商业用途。详见 [docs/DISCLAIMER.md](docs/DISCLAIMER.md)。
+
+代码与配置采用 [Apache License 2.0](LICENSE)。该协议只覆盖本仓库的代码与配置，**不覆盖原作素材**（原作台词、角色立绘、同人表情包等），这些素材的版权归原权利人所有。
+
+## 🌟 Star History
+
+<a href="https://star-history.com/#NkhszkQAQ/ATRI_LoRA&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=NkhszkQAQ/ATRI_LoRA&type=Date&theme=dark" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=NkhszkQAQ/ATRI_LoRA&type=Date" />
+  </picture>
+</a>
+
+<div align="center">
+
+如果亚托莉陪你聊得开心，点个 ⭐ 就是对她最好的夸奖——毕竟她是高性能的嘛。
+
+</div>
