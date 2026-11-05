@@ -24,7 +24,7 @@
 
 - **两档底座，按显卡挑**：4B 版 4bit 量化约 2.5 GB 显存，8B 版约 6 GB，消费级显卡和 Colab 免费 T4 都能跑
 - **轻量 adapter**：只发 LoRA 权重，4B 版约 45 MB、8B 版约 61 MB，底座自动从 Hugging Face 拉
-- **Colab 零配置体验**：上传 notebook、点运行，几分钟后拿到一个能直接聊天的网页链接
+- **Colab 零配置体验**：上传 notebook、点运行，十几分钟后拿到一个能直接聊天的网页链接
 - **OpenAI 兼容接口**：`tools/serve_v1_1_8b.py` 直接接 AstrBot、NextChat、各种 QQ / 微信机器人框架
 - **训练全流程公开**：数据清洗、生成、评估脚本和 LLaMA-Factory 配置都在仓库里，可以复现，也可以拿去训你自己的角色
 - **思考链实验版**：v1.1-DT 先在内心独白里想，再开口回答
@@ -39,9 +39,10 @@
 4. 最后一格会输出 `https://xxx.trycloudflare.com`，浏览器打开就能聊
 
 > [!TIP]
-> 第 3 格会用 Colab Secrets 里的 `GH_TOKEN` 从 Release 自动下载 adapter（`v0.9-Beta`）。
-> 本地跑 `gh auth token` 拿到 token，在 Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN` 并勾选 Notebook access。
-> 不配也能跑，会回退成手动上传 zip。首次运行约 5–8 分钟，主要花在下载底座模型。
+> 默认加载 **v1.1-R**（Qwen3-8B，4bit NF4，约 6 GB 显存），T4 免费额度就能跑。
+> 想换 v1.0-R / v1.0-C（4B）或 v1.1-DT（思考版），改第 3 格开头的 `VERSION`。
+> 仓库已公开，`GH_TOKEN` 可不配；遇到限流再在 Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN` 并勾选 Notebook access。
+> 首次运行约 10–20 分钟，主要花在下载约 16 GB 的 Qwen3-8B 底座；之后加载约 1–3 分钟。
 
 ### 方式二：本地 / 服务器
 
@@ -67,12 +68,12 @@ python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 | | v1.1-DT | 带思考链，实验版（已知问题见 Release 说明） | `atri_adapter_v1.1-DT.zip` |
 | [**Qwen3-4B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-4B) | v1.0-R | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
 | | v1.0-C | 更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
-| [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | v0.9-Beta | 原作剧本训练版，Colab notebook 默认加载 | `atri_adapter_v5.zip` |
+| [v0.9-Beta](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.9-Beta) | v0.9-Beta | 原作剧本训练版（旧版，Colab 已在 v1.1 起不再默认使用） | `atri_adapter_v5.zip` |
 | [v0.1](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/v0.1) | v0.1 | 早期推理版 | `atri_adapter.zip` |
 
 <sub>后缀：**C** = Classic · **R** = Recommended · **DT** = DeepThinking · **Beta** = 测试版</sub>
 
-**怎么选？** 显存 ≥ 6 GB 选 **v1.1-R**；只有 4 GB 左右或在 Colab 上选 **v1.0-R**；想看她"心里在想什么"试试 **v1.1-DT**。
+**怎么选？** 显存 ≥ 6 GB（含 Colab T4）选 **v1.1-R**；只有 4 GB 左右选 **v1.0-R**；想看她"心里在想什么"试试 **v1.1-DT**。
 
 ## 🔧 规格
 
