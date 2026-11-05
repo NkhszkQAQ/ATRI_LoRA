@@ -30,6 +30,8 @@
 - **训练全流程公开**：数据清洗、生成、评估脚本和 LLaMA-Factory 配置都在仓库里，可以复现，也可以拿去训你自己的角色
 - **思考链实验版**：v1.1-DT 先在内心独白里想，再开口回答
 
+<br>
+
 ## 🚀 快速开始
 
 ### 方式一：Colab（推荐新手）
@@ -80,6 +82,8 @@ export ATRI_SYSTEM=./persona/system_prompt.txt
 python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 ```
 
+<br>
+
 ## 📦 版本选择
 
 权重放在 [GitHub Releases](https://github.com/NkhszkQAQ/ATRI_LoRA/releases)，按底座模型分组：
@@ -96,6 +100,8 @@ python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 <sub>后缀：**C** = Classic · **R** = Recommended · **DT** = DeepThinking · **Beta** = 测试版</sub>
 
 **怎么选？** 显存 ≥ 6 GB（含 Colab T4）选 **v1.1-R**；只有 4 GB 左右选 **v1.0-R**；想看她"心里在想什么"试试 **v1.1-DT**。
+
+<br>
 
 ## 🔧 规格
 
@@ -123,6 +129,8 @@ seed:               不固定（请求体传 seed 才固定，否则每轮随机
 后端为 FastAPI，流式输出（`TextIteratorStreamer`），通过 `cloudflared` 暴露公网地址。
 
 </details>
+
+<br>
 
 ## 🧪 自己训练
 
@@ -159,6 +167,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 > 训练数据不随仓库发布。配置里的 `dataset` 名称需要你自己准备同名数据集，并在 `training/data/dataset_info.json` 注册。
 > `training/scripts/27_gen_thinking.py` 用于生成内心独白数据，需要自备 OpenAI 兼容接口：设置环境变量 `LLM_API_URL`、`LLM_API_KEY`。
 
+<br>
+
 ## 🛰️ 推理服务
 
 `tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口（`/v1/chat/completions`，支持流式），通过环境变量配置：
@@ -175,6 +185,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
 
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
+
+<br>
 
 ## 🧠 长期记忆
 
@@ -205,6 +217,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 实现随仓库按 Apache-2.0 开源，任何用户均可自行部署；用户记忆与访问密钥不随代码发布。
 
+<br>
+
 ## 📁 目录结构
 
 ```
@@ -223,6 +237,8 @@ docs/          文档
 misc/          docker / compose / requirements
 ```
 
+<br>
+
 ## ⚠️ 已知限制
 
 | 项 | 现状 |
@@ -233,6 +249,8 @@ misc/          docker / compose / requirements
 | 安全拒绝 | 敏感场景拒绝表达弱于 v2.2 |
 
 欢迎在 [Issues](https://github.com/NkhszkQAQ/ATRI_LoRA/issues) 反馈问题、分享对话截图或提改进建议。
+
+<br>
 
 ## English
 
@@ -245,11 +263,15 @@ misc/          docker / compose / requirements
 
 Unofficial, non-commercial fan project. See [docs/DISCLAIMER.md](docs/DISCLAIMER.md).
 
+<br>
+
 ## 📜 声明与许可
 
 个人学习用途，**与《ATRI -My Dear Moments-》版权方无关**，原作素材不得用于商业用途。详见 [docs/DISCLAIMER.md](docs/DISCLAIMER.md)。
 
 代码与配置采用 [Apache License 2.0](LICENSE)。该协议只覆盖本仓库的代码与配置，**不覆盖原作素材**（原作台词、角色立绘、同人表情包等），这些素材的版权归原权利人所有。
+
+<br>
 
 ## 🌟 Star History
 
