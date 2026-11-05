@@ -1,5 +1,7 @@
 # 本地剧本 RAG
 
+当前 v1.3 服务候选版增加生成后的事实检查及来源回退，必须按 [v1.3 迁移说明](V1_3.md)重建索引。下方第二至第四轮保留各阶段结果，不能视为 v1.3 已通过真实 GPU 验收。
+
 RAG 用小型中文 embedding 模型寻找相关剧本，再由原来的 Qwen3-8B + LoRA 回答。不重新训练 LoRA，也不替换推理服务。默认关闭，普通和 SSE 请求共用同一个注入位置。
 
 本实现沿用 [LlamaIndex 本地教程](https://developers.llamaindex.ai/python/framework/getting_started/starter_example_local/) 的 `SimpleDirectoryReader`、`HuggingFaceEmbedding`、`VectorStoreIndex` 和默认磁盘存储。适配项目的部分：原作剧本先解析 JSON 场景；embedding 使用已确认的中文 `BAAI/bge-base-zh-v1.5`；检索通过 `as_retriever()` 得到原始片段，直接注入已有 LoRA 服务。没有安装 Ollama 集成或 AgentWorkflow，不要求 ATRI 模型调用工具，也不使用另外一个模型先写摘要。
@@ -27,11 +29,11 @@ export TIKTOKEN_CACHE_DIR="$PWD/.rag-cache/tiktoken"
 export DISABLE_SAFETENSORS_CONVERSION=1
 python tools/atri_rag.py build \
   --source /Users/nkhszk/atri/_共用资料/原作剧本 \
-  --storage ./rag_storage-v2 \
+  --storage ./rag_storage-v1.3 \
   --persona ./persona \
   --facts ./rag/character_facts.json
 
-python tools/atri_rag.py search --storage ./rag_storage-v2 '亚托莉是谁？'
+python tools/atri_rag.py search --storage ./rag_storage-v1.3 '亚托莉是谁？'
 ```
 
 支持 UTF-8 `.md`、普通 `.txt`，以及 JSON 数组格式的剧本（`.json` 或以 JSON 开头的 `.txt`）。剧本按场景生成 Document，保留说话者与从 1 开始的对白编号，再由 SentenceSplitter 切分。不跟随目录内的符号链接，跳过隐藏路径。JSON 格式不符合剧本结构时明确失败，不默默丢弃资料。开头为 `[` 或 `{` 的文本按 JSON 校验，普通资料如有这种开头请先整理成 Markdown 正文。
@@ -42,18 +44,18 @@ python tools/atri_rag.py search --storage ./rag_storage-v2 '亚托莉是谁？'
 
 ## 接入现有服务
 
-在已能正常运行 8B LoRA 的环境中安装 RAG 依赖，将 `tools/atri_rag.py` 和 `tools/serve_v1_1_8b.py` 放在同一目录。使用原有的底座、adapter 和 system 路径：
+在已能正常运行 8B LoRA 的环境中安装 RAG 依赖，将 `tools/atri_rag.py`、`tools/atri_grounding.py`、`tools/atri_memory.py` 和 `tools/serve_v1_1_8b.py` 放在同一目录。使用原有的底座和 adapter，并使用本版 system 文件：
 
 ```bash
 export ATRI_BASE=/path/to/Qwen3-8B
 export ATRI_ADAPTER=/path/to/adapter
 export ATRI_SYSTEM=/path/to/atri-system.txt
 export ATRI_RAG_ENABLED=1
-export ATRI_RAG_STORAGE=/path/to/rag_storage-v2
+export ATRI_RAG_STORAGE=/path/to/rag_storage-v1.3
 python tools/serve_v1_1_8b.py
 ```
 
-开启后，在创建 FastAPI 应用时加载索引一次。没有 storage、索引损坏或模型/切分配置不匹配时启动失败并报错。关闭时不导入 LlamaIndex 或加载 embedding；设 `ATRI_RAG_ENABLED=0` 并重启即可。当前入口先加载 LoRA 再创建应用，RAG 启动错误不会提前避免 LoRA 的加载耗时。
+开启后，在创建 FastAPI 应用时加载索引一次。没有 storage、索引损坏或模型/切分配置不匹配时启动失败并报错。关闭时不导入 LlamaIndex 或加载 embedding；设 `ATRI_RAG_ENABLED=0` 并重启即可。v1.3 入口先检查配置和索引，再加载 LoRA。
 
 | 环境变量 | 默认值 | 作用 |
 | --- | --- | --- |

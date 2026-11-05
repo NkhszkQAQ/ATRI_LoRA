@@ -157,6 +157,12 @@ def supplementary_documents(source: Path, persona: Path | None, facts: Path | No
             if card["id"] in seen or not card.get("evidence"):
                 raise ValueError("duplicate fact id or missing evidence")
             seen.add(card["id"])
+            contract = card.get("answer_contract", {})
+            for group in ("required", "forbidden"):
+                for pattern in contract.get(group, []):
+                    matched = bool(re.search(pattern, card["answer"], re.I))
+                    if (group == "required" and not matched) or (group == "forbidden" and matched):
+                        raise ValueError("fact answer contradicts its output contract: " + card["id"])
             for ref in card["evidence"]:
                 path = (source / ref["source"]).resolve(strict=True)
                 if not path.is_relative_to(source.resolve()):
@@ -171,7 +177,8 @@ def supplementary_documents(source: Path, persona: Path | None, facts: Path | No
                 if not 1 <= ref["dialogue_start"] <= ref["dialogue_end"] <= len(dialogues):
                     raise ValueError("invalid fact citation range")
             metadata = {"source": "facts/" + card["id"], "kind": "canonical_fact", "fact_id": card["id"],
-                        "evidence": json.dumps(card["evidence"], ensure_ascii=False), "scope": card["scope"]}
+                        "evidence": json.dumps(card["evidence"], ensure_ascii=False), "scope": card["scope"], "answer": card["answer"],
+                        "answer_contract": json.dumps(card.get("answer_contract", {}), ensure_ascii=False)}
             text = card["title"] + "\n相关问题：" + "；".join(card["questions"]) + "\n" + card["answer"]
             docs.append(Document(text=text, metadata=metadata, id_=metadata["source"]))
         inventory.append({"source": "facts/" + facts.name, "sha256": hashlib.sha256(raw).hexdigest(), "kind": "fact_collection"})
@@ -291,6 +298,9 @@ class Retriever:
             StorageContext.from_defaults(persist_dir=str(storage)),
             embed_model=embed_model if embed_model is not None else embedding(config),
         )
+        fact_nodes = [node for node in index.docstore.docs.values()
+                      if node.metadata.get("kind") == "canonical_fact"]
+        self.grounding_ready = bool(fact_nodes) and all(node.metadata.get("answer") for node in fact_nodes)
         self.retriever = index.as_retriever(similarity_top_k=config.candidate_k)
         self.fact_retriever = None
         if config.rerank_enabled:
@@ -358,6 +368,9 @@ class Retriever:
         hits = self.search(question, messages[:-1])
         if not hits:
             return messages
+        facts = [hit for hit in hits if hit["metadata"].get("kind") == "canonical_fact"]
+        if facts:
+            hits = facts
         context, remaining = [], self.config.max_context_chars
         for hit in hits:
             # JSON quotes document content and preserves provenance without treating

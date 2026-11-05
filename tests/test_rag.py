@@ -195,6 +195,7 @@ def test_persistence_search_and_mismatch(corpus, tmp_path):
     assert manifest["documents"] == 3
     assert manifest["nodes"] >= 3
     retrieved = Retriever(storage, cfg, embed_model=TopicEmbedding())
+    assert retrieved.grounding_ready is False
     hit = retrieved.search("学校")[0]
     assert hit["metadata"]["source"] == "story.txt"
     assert hit["metadata"]["scene"] == 1
@@ -206,6 +207,35 @@ def test_persistence_search_and_mismatch(corpus, tmp_path):
     with pytest.raises(ValueError, match="already exists"):
         build_index(corpus, storage, cfg, embed_model=TopicEmbedding())
     assert before == (storage / "atri_manifest.json").read_bytes()
+
+
+def test_grounding_readiness_is_checked_against_persisted_fact_metadata(corpus, tmp_path):
+    import hashlib
+    storage = tmp_path / "index"
+    facts = tmp_path / "facts.json"
+    facts.write_text(json.dumps({"version": 1, "cards": [{
+        "id": "school", "title": "学校", "questions": ["学校在哪"],
+        "answer": "学校在山坡上", "scope": "early_story", "evidence": [{
+            "source": "story.txt", "sha256": hashlib.sha256((corpus / "story.txt").read_bytes()).hexdigest(),
+            "scene": 1, "dialogue_start": 1, "dialogue_end": 1}]}]}))
+    cfg = Config(rerank_enabled=False)
+    build_index(corpus, storage, cfg, facts=facts, embed_model=TopicEmbedding())
+    assert Retriever(storage, cfg, embed_model=TopicEmbedding()).grounding_ready is True
+    # Older snapshots had fact IDs and citations, but no complete answer metadata.
+    path = storage / "docstore.json"
+    data = json.loads(path.read_text())
+    def remove_old_missing_field(value):
+        if isinstance(value, dict):
+            if value.get("kind") == "canonical_fact":
+                value.pop("answer", None)
+            for child in value.values():
+                remove_old_missing_field(child)
+        elif isinstance(value, list):
+            for child in value:
+                remove_old_missing_field(child)
+    remove_old_missing_field(data)
+    path.write_text(json.dumps(data))
+    assert Retriever(storage, cfg, embed_model=TopicEmbedding()).grounding_ready is False
 
 
 def test_augmentation_preserves_history_and_question(corpus, tmp_path):

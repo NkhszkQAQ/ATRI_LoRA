@@ -171,6 +171,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 ## 🛰️ 推理服务
 
+**v1.3 服务修复候选版**：继续使用 v1.1-R 权重，增加事实检查、失败重答/来源回退、未知设定处理及多问题的记忆归属修复。目前完成本地检查，等待真实 8B 验收，未发布或部署。配置与限制见 [v1.3 说明](docs/V1_3.md)。
+
 `tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口（`/v1/chat/completions`，支持流式），通过环境变量配置：
 
 | 变量 | 作用 | 默认 |
@@ -179,7 +181,7 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 | `ATRI_ADAPTER` | adapter 目录 | 需自行设置 |
 | `ATRI_SYSTEM` | system prompt 文件 | 需自行设置 |
 | `ATRI_PORT` | 监听端口 | `8003` |
-| `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.1-8B` |
+| `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.3-8B` |
 | `ATRI_SEED` | 已弃用：种子改由请求体 `seed` 控制，不传则随机 | — |
 
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
