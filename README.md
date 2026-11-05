@@ -38,7 +38,7 @@ notebook 会在 GPU 上加载 **Qwen3-8B + v1.1-R LoRA**（4bit NF4，约 6 GB �
 **步骤**
 
 1. 打开 [colab.research.google.com](https://colab.research.google.com) → `File → Upload notebook` → 选 [`colab/ATRI_LoRA_Colab.ipynb`](colab/ATRI_LoRA_Colab.ipynb)
-2. `Runtime → Change runtime type` → 选 **T4 GPU**（免费额度够用；A100 / L4 更快）
+2. `Runtime → Change runtime type` → 选 **T4 GPU**（免费额度够用；A100 / L4 更快）。**换完必须点「重新连接」**，内核才会换成 GPU 版
 3. 从上往下依次运行 5 个代码格：
    - 第 1 格：检查 GPU 和显存
    - 第 2 格：装依赖（会卸载 Colab 自带的旧 torchao）
@@ -111,11 +111,12 @@ python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 <summary><b>默认推理参数</b>（<code>colab/ATRI_LoRA_Colab.ipynb</code>）</summary>
 
 ```yaml
-temperature:        0.85
+temperature:        0.7
 top_p:              0.9
 max_new_tokens:     512
-repetition_penalty: 1.05
+repetition_penalty: 1.1
 do_sample:          true
+seed:               不固定（请求体传 seed 才固定，否则每轮随机）
 ```
 
 后端为 FastAPI，流式输出（`TextIteratorStreamer`），通过 `cloudflared` 暴露公网地址。
@@ -168,7 +169,7 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 | `ATRI_SYSTEM` | system prompt 文件 | 需自行设置 |
 | `ATRI_PORT` | 监听端口 | `8003` |
 | `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.1-8B` |
-| `ATRI_SEED` | 随机种子 | `20261104` |
+| `ATRI_SEED` | 已弃用：种子改由请求体 `seed` 控制，不传则随机 | — |
 
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
 
