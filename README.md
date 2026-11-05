@@ -14,7 +14,7 @@
 [![Base](https://img.shields.io/badge/base-Qwen3--4B%20%7C%208B-b39ddb?style=flat-square)](https://huggingface.co/Qwen)
 [![Colab](https://img.shields.io/badge/Open%20in-Colab-f9ab00?style=flat-square&logo=googlecolab&logoColor=white)](colab/ATRI_LoRA_Colab.ipynb)
 
-[快速开始](#-快速开始) · [版本选择](#-版本选择) · [训练](#-自己训练) · [推理服务](#-推理服务) · [已知限制](#-已知限制) · [English](#english)
+[快速开始](#-快速开始) · [版本选择](#-版本选择) · [训练](#-自己训练) · [推理服务](#-推理服务) · [长期记忆](#-长期记忆) · [已知限制](#-已知限制) · [English](#english)
 
 </div>
 
@@ -26,6 +26,7 @@
 - **轻量 adapter**：只发 LoRA 权重，4B 版约 45 MB、8B 版约 61 MB，底座自动从 Hugging Face 拉
 - **Colab 零配置体验**：上传 notebook、点运行，十几分钟后拿到一个能直接聊天的网页链接
 - **OpenAI 兼容接口**：`tools/serve_v1_1_8b.py` 直接接 AstrBot、NextChat、各种 QQ / 微信机器人框架
+- **可选长期记忆**：8B 独立服务可跨会话保存称呼与偏好，支持查看、更新、忘记，按用户独立保存
 - **训练全流程公开**：数据清洗、生成、评估脚本和 LLaMA-Factory 配置都在仓库里，可以复现，也可以拿去训你自己的角色
 - **思考链实验版**：v1.1-DT 先在内心独白里想，再开口回答
 
@@ -173,9 +174,36 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
 
-**长期记忆（可选）**：8B 独立推理服务支持按用户保存跨会话记忆，使用本地 SQLite，无需额外模型或重新训练。提供查看、更新、删除接口，以及聊天中的 `/memory` 指令；默认关闭。安装与多用户配置见 [长期记忆指南](docs/LONG_TERM_MEMORY.md)。实现与仓库一起按 Apache-2.0 开源，用户记忆和访问密钥不随代码发布。
-
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
+
+## 🧠 长期记忆
+
+让亚托莉在新会话里也能参考你保存的称呼、偏好与约定。记忆保存在本地数据库中，重启后仍可使用，无需重新训练模型。
+
+**明确保存 · 跨会话保留 · 按用户隔离 · 随时忘记**
+
+开启后，在聊天中单独发送：
+
+```text
+/memory remember 称呼=小明
+/memory remember 喜欢的颜色=蓝色
+```
+
+下次开启新会话再问「我喜欢什么颜色？」，服务会将已保存的记忆交给模型参考。
+
+| 想做什么 | 发送什么 |
+|---|---|
+| 查看已保存的记忆 | `/memory list` |
+| 更新一条记忆 | `/memory remember 喜欢的颜色=绿色` |
+| 忘记一条记忆 | `/memory forget 喜欢的颜色` |
+| 清空全部记忆 | `/memory clear` |
+
+> [!NOTE]
+> 默认关闭，需先在服务器配置并开启。当前仅接入 **8B 独立推理服务**，Colab、4B 和 Gradio 入口不会自动获得此功能。普通聊天不会自动写入记忆；每位用户需要独立密钥，共用密钥就会共用记忆。
+
+**[开始配置长期记忆 →](docs/LONG_TERM_MEMORY.md)** · [客户端怎么填](docs/LONG_TERM_MEMORY.md#3-连接聊天客户端) · [容量与使用范围](docs/LONG_TERM_MEMORY.md#容量与使用范围)
+
+实现随仓库按 Apache-2.0 开源，任何用户均可自行部署；用户记忆与访问密钥不随代码发布。
 
 ## 📁 目录结构
 
@@ -213,6 +241,7 @@ misc/          docker / compose / requirements
 - **Quick try**: upload `colab/ATRI_LoRA_Colab.ipynb` to Colab, pick a T4 GPU, run all cells. Ships with v1.1-R (Qwen3-8B, 4-bit NF4); set `VERSION` in cell 3 to switch to v1.1-DT or a 4B v1.0 variant.
 - **Recommended weights**: `v1.1-R` on Qwen3-8B (~6 GB VRAM in 4-bit); `v1.0-R` on Qwen3-4B (~2.5 GB).
 - **Serve**: `python tools/serve_v1_1_8b.py` with `ATRI_BASE` / `ATRI_ADAPTER` / `ATRI_SYSTEM` set.
+- **Long-term memory**: opt-in, per-user persistent memory for the standalone 8B server. Explicit save/update/forget commands; no automatic collection from ordinary chat. See the [setup guide](docs/LONG_TERM_MEMORY.md).
 
 Unofficial, non-commercial fan project. See [docs/DISCLAIMER.md](docs/DISCLAIMER.md).
 
