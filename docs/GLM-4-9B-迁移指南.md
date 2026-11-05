@@ -94,7 +94,7 @@ python training/scripts/21_bench.py --base /root/autodl-tmp/models/GLM-4-9B-0414
 ## 7. 训完之后
 
 - adapter 大约 100~200MB（`lora_target: all` 比只训 q/v 大一些）。
-- Colab T4 16G 跑 9B 4bit 推理没问题（权重约 6G + KV cache），把 `ATRI_Colab_v5.ipynb` 里的 base 换成 GLM、template 换成 `glm4` 即可。
+- Colab T4 16G 跑 9B 4bit 推理没问题（权重约 6G + KV cache），把 `ATRI_LoRA_Colab.ipynb` 里的 base 换成 GLM、template 换成 `glm4` 即可。
 - 本机 RTX 4070 8G 跑 9B 4bit 推理勉强（约 6.5G，显存吃满），建议还是走 Colab。
 
 ## 8. 时间线

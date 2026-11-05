@@ -12,7 +12,7 @@
 [![Release](https://img.shields.io/github/v/release/NkhszkQAQ/ATRI_LoRA?style=flat-square&color=89c4e1&label=latest)](https://github.com/NkhszkQAQ/ATRI_LoRA/releases)
 [![License](https://img.shields.io/badge/code-Apache--2.0-a5d6a7?style=flat-square)](LICENSE)
 [![Base](https://img.shields.io/badge/base-Qwen3--4B%20%7C%208B-b39ddb?style=flat-square)](https://huggingface.co/Qwen)
-[![Colab](https://img.shields.io/badge/Open%20in-Colab-f9ab00?style=flat-square&logo=googlecolab&logoColor=white)](colab/ATRI_Colab_v5.ipynb)
+[![Colab](https://img.shields.io/badge/Open%20in-Colab-f9ab00?style=flat-square&logo=googlecolab&logoColor=white)](colab/ATRI_LoRA_Colab.ipynb)
 
 [快速开始](#-快速开始) · [版本选择](#-版本选择) · [训练](#-自己训练) · [推理服务](#-推理服务) · [已知限制](#-已知限制) · [English](#english)
 
@@ -37,7 +37,7 @@ notebook 会在 GPU 上加载 **Qwen3-8B + v1.1-R LoRA**（4bit NF4，约 6 GB �
 
 **步骤**
 
-1. 打开 [colab.research.google.com](https://colab.research.google.com) → `File → Upload notebook` → 选 [`colab/ATRI_Colab_v5.ipynb`](colab/ATRI_Colab_v5.ipynb)
+1. 打开 [colab.research.google.com](https://colab.research.google.com) → `File → Upload notebook` → 选 [`colab/ATRI_LoRA_Colab.ipynb`](colab/ATRI_LoRA_Colab.ipynb)
 2. `Runtime → Change runtime type` → 选 **T4 GPU**（免费额度够用；A100 / L4 更快）
 3. 从上往下依次运行 5 个代码格：
    - 第 1 格：检查 GPU 和显存
@@ -108,7 +108,7 @@ python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 | 训练数据 | v0.9-Beta：原作剧本提取 + 人工构造，1,448 条 / 约 42,500 字；v1.0 起另加多轮对话，其用户侧文本来自开发者本人聊天记录的脱敏片段，角色回复由 Claude 生成。**训练数据不随仓库发布** |
 
 <details>
-<summary><b>默认推理参数</b>（<code>colab/ATRI_Colab_v5.ipynb</code>）</summary>
+<summary><b>默认推理参数</b>（<code>colab/ATRI_LoRA_Colab.ipynb</code>）</summary>
 
 ```yaml
 temperature:        0.85
@@ -207,7 +207,7 @@ misc/          docker / compose / requirements
 
 **ATRI LoRA** is a fan-made LoRA adapter that turns Qwen3 (4B / 8B) into a companion chatbot modeled on Atri from the visual novel *ATRI -My Dear Moments-*. The repo ships adapter weights (via Releases), LLaMA-Factory training configs, data-processing scripts, an OpenAI-compatible inference server and a one-click Colab notebook. The model mainly speaks Chinese.
 
-- **Quick try**: upload `colab/ATRI_Colab_v5.ipynb` to Colab, pick a T4 GPU, run all cells. Ships with v1.1-R (Qwen3-8B, 4-bit NF4); set `VERSION` in cell 3 to switch to v1.1-DT or a 4B v1.0 variant.
+- **Quick try**: upload `colab/ATRI_LoRA_Colab.ipynb` to Colab, pick a T4 GPU, run all cells. Ships with v1.1-R (Qwen3-8B, 4-bit NF4); set `VERSION` in cell 3 to switch to v1.1-DT or a 4B v1.0 variant.
 - **Recommended weights**: `v1.1-R` on Qwen3-8B (~6 GB VRAM in 4-bit); `v1.0-R` on Qwen3-4B (~2.5 GB).
 - **Serve**: `python tools/serve_v1_1_8b.py` with `ATRI_BASE` / `ATRI_ADAPTER` / `ATRI_SYSTEM` set.
 
