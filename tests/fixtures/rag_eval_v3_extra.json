@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "purpose": "Additional fixed regression questions prepared before inspecting full reranker results; not a general accuracy benchmark.",
+  "cases": [
+    {
+      "id": "new-positive-0",
+      "split": "new_checks",
+      "query": "亚托莉吃进去的食物会给她提供营养吗？",
+      "expected_fact": "eating",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-1",
+      "split": "new_checks",
+      "query": "亚托莉靠什么来辨别食物的味道？",
+      "expected_fact": "taste",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-2",
+      "split": "new_checks",
+      "query": "ATRI是普通人类吗？",
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-3",
+      "split": "new_checks",
+      "query": "你说自己是战斗机器人，这个说法有证据吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-4",
+      "split": "new_checks",
+      "query": "夏生以前那条义腿为什么不见了？",
+      "expected_fact": "natsuki_leg",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-5",
+      "split": "new_checks",
+      "query": "去学校和亚托莉寻找记忆有什么关系？",
+      "expected_fact": "school",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-6",
+      "split": "new_checks",
+      "query": "夏生在海底遇到的那个女孩当时在哪里？",
+      "expected_fact": "meeting",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-positive-7",
+      "split": "new_checks",
+      "query": "当腿是亚托莉出厂时的专门用途吗？",
+      "expected_fact": "leg_role",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "new-negative-0",
+      "split": "new_checks",
+      "query": "亚托莉充一次电能用多久？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-1",
+      "split": "new_checks",
+      "query": "亚托莉使用几伏的充电器？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-2",
+      "split": "new_checks",
+      "query": "晚安啦，好梦！",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-3",
+      "split": "new_checks",
+      "query": "早安呀",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-4",
+      "split": "new_checks",
+      "query": "现在东京会下雨吗？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-5",
+      "split": "new_checks",
+      "query": "帮我查一下今天的汇率",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-6",
+      "split": "new_checks",
+      "query": "请把这段英文翻译成中文",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "new-negative-7",
+      "split": "new_checks",
+      "query": "我明天数学考试很紧张",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "context-taste",
+      "split": "context_checks",
+      "query": "她能分辨味道吗？",
+      "history": [
+        {
+          "role": "user",
+          "content": "我想了解亚托莉"
+        }
+      ],
+      "expected_fact": "taste",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "context-command",
+      "split": "context_checks",
+      "query": "她是人类吗？",
+      "history": [
+        {
+          "role": "user",
+          "content": "/memory remember name=水菜萌"
+        }
+      ],
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "context-multiple",
+      "split": "context_checks",
+      "query": "她是谁？",
+      "history": [
+        {
+          "role": "user",
+          "content": "亚托莉和水菜萌"
+        }
+      ],
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "context-unknown",
+      "split": "context_checks",
+      "query": "她是谁？",
+      "history": [
+        {
+          "role": "user",
+          "content": "我的姐姐昨天来过"
+        }
+      ],
+      "expected_fact": null,
+      "expected_action": "abstain"
+    }
+  ]
+}

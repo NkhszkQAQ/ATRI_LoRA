@@ -63,7 +63,12 @@ python tools/serve_v1_1_8b.py
 | `ATRI_RAG_CHUNK_SIZE` | `256` | LlamaIndex tokenizer 的切分 token 数 |
 | `ATRI_RAG_CHUNK_OVERLAP` | `32` | 相邻片段重叠 token 数 |
 | `ATRI_RAG_TOP_K` | `3` | 最终最大检索片段数，先召回至少 12 个候选 |
-| `ATRI_RAG_MIN_SCORE` | `0.55` | 相似度过滤阈值，在本项目小型校准集上选取，不代表通用可信度 |
+| `ATRI_RAG_MIN_SCORE` | `0.55` | 关闭重排时的向量相似度过滤阈值 |
+| `ATRI_RAG_REWRITE` | `1` | 启用有界规则化查询改写 |
+| `ATRI_RAG_RERANK` | `1` | 启用本地交叉编码器重排；RAG 总开关仍默认关闭 |
+| `ATRI_RAG_RERANK_MODEL` | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | 单输出多语言重排模型 |
+| `ATRI_RAG_RERANK_MIN_SCORE` | `0.5` | sigmoid 归一化后的重排过滤阈值，不是校准概率 |
+| `ATRI_RAG_CANDIDATES` | `20` | 每个查询的通用候选数，另召回最多10个事实卡片段 |
 | `ATRI_RAG_MAX_CONTEXT_CHARS` | `4000` | 注入的参考资料 JSON 字符预算 |
 
 embedding 的输入上限为 512 个自身 tokenizer token。切分 tokenizer 与 embedding tokenizer 不同，极端长文本可能被 embedding 截断；切分参数需结合命中质量调整，调整后重建索引。字符预算只限制新增参考资料，不限制用户历史；超长会话仍由现有客户端管理。
@@ -92,7 +97,7 @@ python -m pytest tests/test_rag.py -q
 - 本机未做 CUDA/NF4 + PEFT LoRA 的真实生成、真实 GPU SSE、QQ 收发或部署验证。合并或部署前应补齐这些推理相关检查并评估检索质量。
 
 
-## 补充资料与检索调校（第二轮）
+## 补充资料与检索调校（第二轮，历史结果）
 
 `--persona` 只导入指定目录中的 persona_card.md 和 character_profile.md，标记为 project_persona。导入时将旧卡“不吃东西”的错误替换为可以进食但不能吸收营养的原作结论，记录 normalization，原文件保持不变。其他称呼、篇幅、陪伴互动规则作为项目改写资料，不能当作原作设定。当前系统提示词仍是角色控制的最高来源，本次不修改它；若旧 system 本身包含错误，真实生成能否正确区分仍需验证。
 
@@ -114,3 +119,31 @@ python tools/eval_rag.py --storage ./rag_storage-v2 --output ./evaluation.json
 结果包含剧本片段，应放在私有目录，避免提交 Git。索引配置与命中详情只供本地审阅。
 
 剩余问题主要是代词/省略实体时的检索召回。已查阅官方的 [Query Transformations](https://developers.llamaindex.ai/python/framework/optimizing/advanced_retrieval/query_transformations/) 与 [Rerankers](https://developers.llamaindex.ai/python/framework/module_guides/models/rerankers/)：可以将追问结合上下文改写为自足问题，或更广召回后通过交叉编码器重排。本轮未额外引入这些模型、框架或模型调用；需要另行验证其延迟、资源消耗、拒绝无关资料的效果与多人物指代歧义。GPU LoRA、真实 GPU SSE 和 QQ 链路仍未在本任务验证，PR 保留 Draft。
+
+
+## 第三轮：规则化改写与本地重排
+
+本轮沿用相同 v2 索引、事实卡和原38题，没有针对失败问题添加答案。实现参考官方 [查询变换](https://developers.llamaindex.ai/python/framework/optimizing/advanced_retrieval/query_transformations/) 和 [重排](https://developers.llamaindex.ai/python/framework/module_guides/models/rerankers/)，通过已安装的 Sentence Transformers CrossEncoder 执行重排，无需新增框架或调用外部生成API。采用多语言 [mMiniLMv2 重排模型](https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1)，CPU执行；首次使用另下载约470MB权重到 HF_HOME 缓存。启用 RAG 时，两项增强默认开启；不需要重建索引。
+
+流程为原问题及最多一个改写问题分别召回，合并去重，再使用改写后的完整问题对候选重排。普通向量召回每个查询最多20项，另按 kind=canonical_fact 过滤召回最多10个事实卡片段，防止概括卡被大量对白挤出候选池。重排开启时用0.35作为较宽的初始向量门槛，之后按0.5的归一化重排分数过滤，沿用事实卡0.04的排序加分，最终最多3项。返回 score 此时是重排相关性分数，同时返回 retrieval_score、retrieval_query 和 rerank_query 以追溯。分数不是事实真实性概率。
+
+改写保留原句，只补全检索问题：直接对助手说“你”时补成亚托莉；独立问题以该角色语料库的亚托莉为默认主体；第三人称参考最近一条用户消息中明确的已知人物。如果该条消息出现多个人物，或第三人称指向未识别的人物，则返回空检索，避免擅自把“她”套成亚托莉。识别人名采用有限列表，并非通用指代消解。助手历史不用于选主体，/memory 指令也不用于选主体。烹饪能力问题补全为家务类能力问法，避免重排模型把做饭误匹配为进食；这是有限领域规则，不是通用LLM改写或答案生成。个人日常状态陈述、固定问候跳过资料检索。多意图、陌生名字和其他复杂指代仍需更广泛评估。
+
+增强逻辑只读取当前请求的原始对话，既不读取也不写入长期记忆数据库。服务器继续先认证/处理记忆命令，再做 RAG，最后注入用户自己的长期记忆。调用者的人设、原始问题和历史对象保持不变。重排在检索锁内执行，防止并发共享模型的中间数据串用；结果去重及分数保存在本次调用中，不写入索引节点。关闭 RAG 仍可独立运行服务；关闭重排不加载第二模型。模型缺失、配置错误不会静默降级为不经过滤的检索。
+
+测试结果：55项自动化测试通过，包含上游长期记忆原测试、普通/SSE各种开关组合、用户隔离、未授权请求、记忆命令绕过RAG，以及改写边界、重排分数归一化/过滤和来源保留。真实模型下，原38题38/38通过，新增16题16/16、多轮边界4题4/4通过。原来的4个失败问题首项分别是 identity、taste、housework、housework 事实卡。改写组现已用于针对性开发，是回归集，不能再当作独立未知测试集；新增问题也不是大规模准确率基准。判定仍是正确事实卡位于前3项或不适用资料时返回空，真实生成正确率没有据此得到验证。
+
+重排器并不总能理解问题：中途测试将“会做饭”误匹配到进食卡，单靠重排只修复3个问题。最终通过能力问法的类目补全及单独召回事实卡解决，因此不能推断任意新问法均已覆盖。GPU LoRA、真实GPU SSE、QQ端到端以及现有人设与知识资料的最终生成一致性仍未在本任务验证，PR继续保留Draft。
+
+复现第三轮及新增问题：
+
+```bash
+export HF_HOME="$PWD/.rag-cache/huggingface"
+export DISABLE_SAFETENSORS_CONVERSION=1
+# 权重完整缓存后才设置离线模式
+export HF_HUB_OFFLINE=1
+python tools/eval_rag.py --storage ./rag_storage-v2 --output .rag-cache/evaluation-v3.json
+python tools/eval_rag.py --storage ./rag_storage-v2 --cases tests/fixtures/rag_eval_v3_extra.json --output .rag-cache/evaluation-v3-extra.json
+```
+
+`--calibrate` 在重排开启时仅比较校准分组的重排阈值，关闭重排时比较向量阈值。若希望暂停增强，设 ATRI_RAG_RERANK=0 和/或 ATRI_RAG_REWRITE=0 并重启；索引与长期记忆不受开关影响。

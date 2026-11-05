@@ -4,7 +4,9 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 import hashlib
+import inspect
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -21,8 +23,15 @@ class Config:
     top_k: int = 3
     max_context_chars: int = 4000
     min_score: float = 0.55
+    rewrite_enabled: bool = True
+    rerank_enabled: bool = True
+    rerank_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    rerank_min_score: float = 0.5
+    candidate_k: int = 20
 
     def __post_init__(self):
+        if self.candidate_k < self.top_k or not 0 <= self.rerank_min_score <= 1:
+            raise ValueError("invalid candidate_k or rerank_min_score")
         if not 0 <= self.min_score <= 1:
             raise ValueError("min_score must be between 0 and 1")
         if not self.model.strip():
@@ -38,6 +47,11 @@ class Config:
             model=os.getenv("ATRI_RAG_EMBED_MODEL", cls.model),
             chunk_size=int(os.getenv("ATRI_RAG_CHUNK_SIZE", "256")),
             chunk_overlap=int(os.getenv("ATRI_RAG_CHUNK_OVERLAP", "32")),
+            rewrite_enabled=os.getenv("ATRI_RAG_REWRITE", "1").lower() in {"1", "true", "yes"},
+            rerank_enabled=os.getenv("ATRI_RAG_RERANK", "1").lower() in {"1", "true", "yes"},
+            rerank_model=os.getenv("ATRI_RAG_RERANK_MODEL", cls.rerank_model),
+            rerank_min_score=float(os.getenv("ATRI_RAG_RERANK_MIN_SCORE", "0.5")),
+            candidate_k=int(os.getenv("ATRI_RAG_CANDIDATES", "20")),
             min_score=float(os.getenv("ATRI_RAG_MIN_SCORE", "0.55")),
             top_k=int(os.getenv("ATRI_RAG_TOP_K", "3")),
             max_context_chars=int(os.getenv("ATRI_RAG_MAX_CONTEXT_CHARS", "4000")),
@@ -211,8 +225,63 @@ def build_index(source: Path, storage: Path, config: Config, *, embed_model=None
     return manifest
 
 
+def _query_pair(original, rewritten):
+    # Normalize capability questions without adding an answer or changing the
+    # original message. Cooking is a household task, not a synonym for eating.
+    if re.search(r"做饭|烹饪", rewritten) and re.search(r"擅长|很会|会不会|是不是.*会|会做饭|会烹饪", rewritten):
+        rewritten = rewritten.replace("是不是很会", "是否擅长").replace("是不是会", "是否擅长")
+        rewritten = rewritten.replace("会不会", "是否擅长")
+        if "家务" not in rewritten:
+            rewritten = re.sub(r"做饭(?:和料理)?|烹饪", lambda match: match[0] + "等家务", rewritten, count=1)
+    return [original] if rewritten == original else [original, rewritten]
+
+
+def query_variants(question, history=()):
+    """Corpus-scoped rewriting, never read or modify persistent user memory.
+
+    Standalone questions default to this corpus's ATRI subject. Recent user turns
+    can identify a different named subject. Multiple named people disable inference.
+    """
+    names = r"亚托莉|ATRI|夏生|水菜萌|凯瑟琳|凛凛花|凜凜花|洋子|龙司|安田"
+    if re.search(names, question, re.I):
+        return _query_pair(question, question)
+    # Second person addresses the assistant; third person requires discourse context.
+    if question.startswith("你"):
+        return _query_pair(question, "亚托莉" + question[1:])
+    subject = "亚托莉"
+    for message in reversed(history):
+        if message.get("role") != "user":
+            continue
+        if message.get("content", "").lstrip().startswith("/memory"):
+            continue
+        found = set(re.findall(names, message.get("content", ""), re.I))
+        if len(found) > 1:
+            return []
+        if found:
+            subject = next(iter(found))
+        elif question.startswith("她"):
+            return []
+        break
+    rewritten = subject + question[1:] if question.startswith("她") else subject + "：" + question
+    return _query_pair(question, rewritten)
+
+
+class LocalReranker:
+    def __init__(self, model):
+        from sentence_transformers import CrossEncoder
+        import torch
+        self.model = CrossEncoder(model, max_length=512, device="cpu", trust_remote_code=False)
+        # Sentence Transformers renamed this predict argument in newer releases.
+        activation_arg = "activation_fn" if "activation_fn" in inspect.signature(self.model.predict).parameters else "activation_fct"
+        self.predict_args = {activation_arg: torch.nn.Sigmoid()}
+
+    def score(self, query, texts):
+        return [float(value) for value in self.model.predict(
+            [(query, text) for text in texts], batch_size=16, show_progress_bar=False, **self.predict_args)]
+
+
 class Retriever:
-    def __init__(self, storage: Path, config: Config, *, embed_model=None):
+    def __init__(self, storage: Path, config: Config, *, embed_model=None, reranker=None):
         from llama_index.core import StorageContext, load_index_from_storage
 
         manifest = json.loads((storage / "atri_manifest.json").read_text(encoding="utf-8"))
@@ -222,28 +291,71 @@ class Retriever:
             StorageContext.from_defaults(persist_dir=str(storage)),
             embed_model=embed_model if embed_model is not None else embedding(config),
         )
-        self.retriever = index.as_retriever(similarity_top_k=max(12, config.top_k * 4))
+        self.retriever = index.as_retriever(similarity_top_k=config.candidate_k)
+        self.fact_retriever = None
+        if config.rerank_enabled:
+            from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
+            self.fact_retriever = index.as_retriever(
+                similarity_top_k=10,
+                filters=MetadataFilters(filters=[MetadataFilter(key="kind", value="canonical_fact")]),
+            )
         self.config = config
+        self.reranker = (reranker if reranker is not None else LocalReranker(config.rerank_model)) if config.rerank_enabled else None
         self.lock = threading.Lock()
 
-    def search(self, question: str):
+    def search(self, question: str, history=()):
         stripped = re.sub(r"[\s，。！？!?,.~～]+", "", question)
         if not stripped or stripped.lower() in {"你好", "你好呀", "嗨", "hello", "hi", "早安", "晚安", "再见", "明天见"}:
             return []
+        if re.fullmatch(r"(?:晚安|早安|再见|明天见)(?:啦|哦|呀|做个好梦|好梦)*", stripped):
+            return []
+        # Personal statements belong to the ongoing conversation, not script lore.
+        if (stripped.startswith("我") and not re.search(r"亚托莉|ATRI|夏生|水菜萌|凯瑟琳", question, re.I)
+                and not re.search(r"[?？]|吗|呢|什么|为何|为什么|怎么|谁|哪里|是否|能否", question)):
+            return []
+        variants = query_variants(question, history) if self.config.rewrite_enabled else [question]
+        if not variants:
+            return []
         with self.lock:
-            results = self.retriever.retrieve(question)
-        eligible = [item for item in results if item.score is not None and item.score >= self.config.min_score]
-        # A source-checked summary can resolve the missing context of short script fragments.
-        eligible.sort(key=lambda item: item.score + (0.04 if item.node.metadata.get("kind") == "canonical_fact" else 0), reverse=True)
-        return [{"node_id": item.node.node_id, "score": item.score,
-                 "text": item.node.text, "metadata": dict(item.node.metadata)} for item in eligible[:self.config.top_k]]
+            candidates = {}
+            for query in variants:
+                results = list(self.retriever.retrieve(query))
+                if self.fact_retriever is not None:
+                    results.extend(self.fact_retriever.retrieve(query))
+                for item in results:
+                    # Wider recall is intentional when the cross-encoder judges relevance.
+                    cutoff = 0.35 if self.reranker is not None else self.config.min_score
+                    if item.score is None or item.score < cutoff:
+                        continue
+                    key = item.node.node_id
+                    if key not in candidates or item.score > candidates[key][0].score:
+                        candidates[key] = (item, query)
+            entries = list(candidates.values())
+            if not entries:
+                return []
+            if self.reranker is not None:
+                scores = self.reranker.score(variants[-1], [item.node.text for item, _ in entries])
+                if len(scores) != len(entries):
+                    raise ValueError("reranker returned an unexpected number of scores")
+            else:
+                scores = [float(item.score) for item, _ in entries]
+        hits = []
+        for (item, query), score in zip(entries, scores):
+            if not math.isfinite(score) or (self.reranker is not None and score < self.config.rerank_min_score):
+                continue
+            hits.append({"node_id": item.node.node_id, "score": float(score),
+                         "retrieval_score": float(item.score), "retrieval_query": query,
+                         "rerank_query": variants[-1], "text": item.node.text,
+                         "metadata": dict(item.node.metadata)})
+        hits.sort(key=lambda hit: hit["score"] + (0.04 if hit["metadata"].get("kind") == "canonical_fact" else 0), reverse=True)
+        return hits[:self.config.top_k]
 
     def augment(self, messages):
         # Only augment a current user turn, never an assistant continuation.
         if not messages or messages[-1].get("role") != "user":
             return messages
         question = messages[-1]["content"]
-        hits = self.search(question)
+        hits = self.search(question, messages[:-1])
         if not hits:
             return messages
         context, remaining = [], self.config.max_context_chars

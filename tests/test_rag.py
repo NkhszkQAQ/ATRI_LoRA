@@ -10,6 +10,78 @@ from atri_rag import Config, Retriever, build_index, from_env, read_documents
 from llama_index.core.embeddings import BaseEmbedding
 
 
+@pytest.mark.parametrize("question,history,expected", [
+    ("你尝得出味道吗？", [], "亚托莉尝得出味道吗？"),
+    ("她是人类吗？", [], "亚托莉是人类吗？"),
+    ("战斗型号已确认吗？", [], "亚托莉：战斗型号已确认吗？"),
+    ("夏生的腿怎么了？", [], "夏生的腿怎么了？"),
+    ("她想上学吗？", [{"role": "user", "content": "说说水菜萌"}], "水菜萌想上学吗？"),
+    ("她是谁？", [{"role": "user", "content": "亚托莉和水菜萌"}], None),
+    ("她是谁？", [{"role": "user", "content": "我的姐姐昨天来过"}], None),
+    ("你有味觉吗？", [{"role": "user", "content": "水菜萌"}], "亚托莉有味觉吗？"),
+    ("她是谁？", [{"role": "assistant", "content": "水菜萌"}], "亚托莉是谁？"),
+    ("她是谁？", [{"role": "user", "content": "/memory remember name=水菜萌"}], "亚托莉是谁？"),
+    ("你会烹饪吗？", [], "亚托莉会烹饪等家务吗？"),
+    ("亚托莉擅长做饭吗？", [], "亚托莉擅长做饭等家务吗？"),
+    ("亚托莉喜欢什么食物？", [], "亚托莉喜欢什么食物？"),
+])
+def test_bounded_query_rewriting(question, history, expected):
+    from atri_rag import query_variants
+    original = json.dumps(history)
+    queries = query_variants(question, history)
+    if expected is None:
+        assert queries == []
+    else:
+        assert queries[0] == question
+        assert queries[-1] == expected
+    assert len(queries) <= 2
+    assert json.dumps(history) == original
+
+
+def test_reranking_deduplicates_and_preserves_provenance(corpus, tmp_path):
+    storage = tmp_path / "index"
+    cfg = Config(rerank_enabled=True)
+    build_index(corpus, storage, cfg, embed_model=TopicEmbedding())
+    class Ranker:
+        calls = []
+        def score(self, query, texts):
+            self.calls.append((query, list(texts)))
+            return [0.9 if "学校" in text else 0.1 for text in texts]
+    ranker = Ranker()
+    rag = Retriever(storage, cfg, embed_model=TopicEmbedding(), reranker=ranker)
+    hits = rag.search("你知道学校在哪里吗？")
+    assert len(hits) == 1
+    assert hits[0]["score"] == 0.9
+    assert hits[0]["metadata"]["source"] == "story.txt"
+    assert hits[0]["metadata"]["scene"] == 1
+    assert "retrieval_score" in hits[0] and "retrieval_query" in hits[0]
+    assert ranker.calls[-1][0] == "亚托莉知道学校在哪里吗？"
+    assert len(ranker.calls[-1][1]) == len(set(ranker.calls[-1][1]))
+    # Filtering everything must leave the user's message intact.
+    ranker.score = lambda q, texts: [0.0] * len(texts)
+    messages = [{"role": "user", "content": "学校在哪里？"}]
+    assert rag.augment(messages) == messages
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_local_reranker_normalizes_logits(monkeypatch, legacy):
+    import sentence_transformers
+    import torch
+    from atri_rag import LocalReranker
+    class Modern:
+        def __init__(self, model, **kwargs):
+            assert kwargs["device"] == "cpu" and kwargs["trust_remote_code"] is False
+        def predict(self, pairs, activation_fn=None, **kwargs):
+            return activation_fn(torch.tensor([0.0, 2.0])).numpy()
+    class Legacy(Modern):
+        def predict(self, pairs, activation_fct=None, **kwargs):
+            return activation_fct(torch.tensor([0.0, 2.0])).numpy()
+    monkeypatch.setattr(sentence_transformers, "CrossEncoder", Legacy if legacy else Modern)
+    scores = LocalReranker("test-fixture").score("问题", ["片段1", "片段2"])
+    assert scores[0] == 0.5
+    assert 0.88 < scores[1] < 0.89
+
+
 def test_supplementary_sources_and_citation_validation(corpus, tmp_path):
     import hashlib
     from atri_rag import supplementary_documents
@@ -39,8 +111,10 @@ def test_cutoff_and_greetings_do_not_inject_weak_matches():
     import threading
     from llama_index.core.schema import NodeWithScore, TextNode
     rag = object.__new__(Retriever)
-    rag.config = Config(min_score=0.6)
+    rag.config = Config(rerank_enabled=False, min_score=0.6)
     rag.lock = threading.Lock()
+    rag.reranker = None
+    rag.fact_retriever = None
     class Backend:
         def retrieve(self, query):
             return [NodeWithScore(node=TextNode(text="不相关片段"), score=0.4)]
@@ -116,7 +190,7 @@ def test_branch_choices_preserve_scene_numbers(tmp_path):
 
 def test_persistence_search_and_mismatch(corpus, tmp_path):
     storage = tmp_path / "index"
-    cfg = Config(top_k=1)
+    cfg = Config(rerank_enabled=False, top_k=1)
     manifest = build_index(corpus, storage, cfg, embed_model=TopicEmbedding())
     assert manifest["documents"] == 3
     assert manifest["nodes"] >= 3
@@ -127,7 +201,7 @@ def test_persistence_search_and_mismatch(corpus, tmp_path):
     assert hit["node_id"] and hit["metadata"]["end_char"] > 0
     assert retrieved.search("  ") == []
     with pytest.raises(ValueError, match="mismatch"):
-        Retriever(storage, Config(model="different"), embed_model=TopicEmbedding())
+        Retriever(storage, Config(rerank_enabled=False, model="different"), embed_model=TopicEmbedding())
     before = (storage / "atri_manifest.json").read_bytes()
     with pytest.raises(ValueError, match="already exists"):
         build_index(corpus, storage, cfg, embed_model=TopicEmbedding())
@@ -136,7 +210,7 @@ def test_persistence_search_and_mismatch(corpus, tmp_path):
 
 def test_augmentation_preserves_history_and_question(corpus, tmp_path):
     storage = tmp_path / "index"
-    cfg = Config(top_k=1)
+    cfg = Config(rerank_enabled=False, top_k=1)
     build_index(corpus, storage, cfg, embed_model=TopicEmbedding())
     rag = Retriever(storage, cfg, embed_model=TopicEmbedding())
     original = [{"role": "system", "content": "你是 ATRI。"},
@@ -154,15 +228,15 @@ def test_augmentation_preserves_history_and_question(corpus, tmp_path):
 
 def test_context_budget_and_empty_retrieval():
     rag = object.__new__(Retriever)
-    rag.config = Config(max_context_chars=300)
-    rag.search = lambda q: [{"node_id": "1", "score": 1, "metadata": {},
+    rag.config = Config(rerank_enabled=False, max_context_chars=300)
+    rag.search = lambda q, *args: [{"node_id": "1", "score": 1, "metadata": {},
                              "text": '\\"学校\n' * 1000}]
     msgs = [{"role": "user", "content": "问题"}]
     result = rag.augment(msgs)
     context = result[-1]["content"].split("参考资料（JSON 数据）：\n")[1].split("\n\n用户问题：")[0]
     assert len(context) <= 300
     assert json.loads(context)[0]["node_id"] == "1"
-    rag.search = lambda q: []
+    rag.search = lambda q, *args: []
     assert rag.augment(msgs) == msgs
 
 
@@ -243,10 +317,11 @@ def test_server_plain_and_sse(monkeypatch, tmp_path, enabled, stream, memory_ena
     if memory_enabled:
         from atri_memory import MemoryStore
         credentials = tmp_path / "users.json"
-        credentials.write_text(json.dumps({"alice": token}))
+        credentials.write_text(json.dumps({"alice": token, "bob": "bob-test-only-token-" * 4}))
         monkeypatch.setenv("ATRI_MEMORY_USERS_FILE", str(credentials))
         monkeypatch.setenv("ATRI_MEMORY_DB", str(tmp_path / "state.sqlite3"))
         MemoryStore(tmp_path / "state.sqlite3").put("alice", "name", "小明")
+        MemoryStore(tmp_path / "state.sqlite3").put("bob", "name", "小红")
     tok = Tokenizer()
     monkeypatch.setattr(server, "state", {"tok": tok, "model": Model()})
     monkeypatch.setattr(server, "default_system", lambda: "ATRI 人设")
@@ -261,6 +336,10 @@ def test_server_plain_and_sse(monkeypatch, tmp_path, enabled, stream, memory_ena
         assert queries == (["学校？"] if enabled else [])
         if memory_enabled:
             assert "小明" in tok.seen[-1]["content"]
+            assert "小红" not in tok.seen[-1]["content"]
+            denied = client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "学校？"}]})
+            assert denied.status_code == 401
+            assert queries == (["学校？"] if enabled else [])
             # Memory commands must bypass RAG as well as generation.
             client.post("/v1/chat/completions", headers={"Authorization": "Bearer " + token},
                         json={"messages": [{"role": "user", "content": "/memory list"}]})
