@@ -33,16 +33,37 @@
 
 ### 方式一：Colab（推荐新手）
 
-1. 打开 [colab.research.google.com](https://colab.research.google.com)，`File → Upload notebook`，选 [`colab/ATRI_Colab_v5.ipynb`](colab/ATRI_Colab_v5.ipynb)
-2. `Runtime → Change runtime type` 选 **T4 GPU**
-3. 依次运行所有单元格
-4. 最后一格会输出 `https://xxx.trycloudflare.com`，浏览器打开就能聊
+notebook 会在 GPU 上加载 **Qwen3-8B + v1.1-R LoRA**（4bit NF4，约 6 GB 显存），再用 Cloudflare 隧道给你一个公网聊天地址。免费 T4 就能跑。
 
-> [!TIP]
-> 默认加载 **v1.1-R**（Qwen3-8B，4bit NF4，约 6 GB 显存），T4 免费额度就能跑。
-> 想换 v1.0-R / v1.0-C（4B）或 v1.1-DT（思考版），改第 3 格开头的 `VERSION`。
-> 仓库已公开，`GH_TOKEN` 可不配；遇到限流再在 Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN` 并勾选 Notebook access。
-> 首次运行约 10–20 分钟，主要花在下载约 16 GB 的 Qwen3-8B 底座；之后加载约 1–3 分钟。
+**步骤**
+
+1. 打开 [colab.research.google.com](https://colab.research.google.com) → `File → Upload notebook` → 选 [`colab/ATRI_Colab_v5.ipynb`](colab/ATRI_Colab_v5.ipynb)
+2. `Runtime → Change runtime type` → 选 **T4 GPU**（免费额度够用；A100 / L4 更快）
+3. 从上往下依次运行 5 个代码格：
+   - 第 1 格：检查 GPU 和显存
+   - 第 2 格：装依赖（会卸载 Colab 自带的旧 torchao）
+   - 第 3 格：从 Release 下载 adapter 并校验大小、底座
+   - 第 4 格：生成前端页面和 FastAPI 后端
+   - 第 5 格：加载模型、起服务、开隧道
+4. 最后一格会打印 `https://xxx.trycloudflare.com`，浏览器或手机打开就能聊
+
+**换版本**：改第 3 格开头的 `VERSION`
+
+| VERSION | 底座 | 显存（4bit） | 说明 |
+|---|---|---|---|
+| `v1.1-R` ⭐ | Qwen3-8B | 约 6 GB | 默认，日常聊天 |
+| `v1.1-DT` | Qwen3-8B | 约 6 GB | 带思考链，实验版 |
+| `v1.0-R` | Qwen3-4B | 约 2.5 GB | 显存不足 6 GB 时用 |
+| `v1.0-C` | Qwen3-4B | 约 2.5 GB | 更接近原作说话特征 |
+
+显存不到 6.5 GB 时，notebook 会自动从 v1.1 降到 v1.0-R，不用手动改。
+
+**关于 GH_TOKEN**：仓库已公开，正常不需要配。只有 GitHub API 匿名限流（403）导致下载失败时，才需要在 Colab 左侧 🔑 → Secrets 新增 `GH_TOKEN` 并勾选 Notebook access；不配也能回退成手动上传 zip。
+
+**耗时**：首次运行约 10–20 分钟，大头是下载约 16 GB 的 Qwen3-8B 底座；模型缓存后重新加载约 1–3 分钟。T4 上生成速度约 8–15 token/s。
+
+> [!NOTE]
+> 第 2 格卸载 torchao 后如果提示需要重启，`Runtime → Restart session`，然后从第 1 格重新跑。
 
 ### 方式二：本地 / 服务器
 
@@ -186,7 +207,7 @@ misc/          docker / compose / requirements
 
 **ATRI LoRA** is a fan-made LoRA adapter that turns Qwen3 (4B / 8B) into a companion chatbot modeled on Atri from the visual novel *ATRI -My Dear Moments-*. The repo ships adapter weights (via Releases), LLaMA-Factory training configs, data-processing scripts, an OpenAI-compatible inference server and a one-click Colab notebook. The model mainly speaks Chinese.
 
-- **Quick try**: upload `colab/ATRI_Colab_v5.ipynb` to Colab, pick a T4 GPU, run all cells.
+- **Quick try**: upload `colab/ATRI_Colab_v5.ipynb` to Colab, pick a T4 GPU, run all cells. Ships with v1.1-R (Qwen3-8B, 4-bit NF4); set `VERSION` in cell 3 to switch to v1.1-DT or a 4B v1.0 variant.
 - **Recommended weights**: `v1.1-R` on Qwen3-8B (~6 GB VRAM in 4-bit); `v1.0-R` on Qwen3-4B (~2.5 GB).
 - **Serve**: `python tools/serve_v1_1_8b.py` with `ATRI_BASE` / `ATRI_ADAPTER` / `ATRI_SYSTEM` set.
 
