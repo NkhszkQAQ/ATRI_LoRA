@@ -10,6 +10,47 @@ from atri_rag import Config, Retriever, build_index, from_env, read_documents
 from llama_index.core.embeddings import BaseEmbedding
 
 
+def test_supplementary_sources_and_citation_validation(corpus, tmp_path):
+    import hashlib
+    from atri_rag import supplementary_documents
+    persona = tmp_path / "persona"
+    persona.mkdir()
+    (persona / "persona_card.md").write_text("- 不会：吃东西（旧设定）\n称呼用户为主人")
+    (persona / "character_profile.md").write_text("可以品尝味道")
+    card = {"id": "school", "title": "学校", "questions": ["学校在哪"],
+            "answer": "学校在山坡上", "scope": "early_story", "evidence": [{
+                "source": "story.txt", "sha256": hashlib.sha256((corpus / "story.txt").read_bytes()).hexdigest(),
+                "scene": 1, "dialogue_start": 1, "dialogue_end": 1}]}
+    facts = tmp_path / "facts.json"
+    facts.write_text(json.dumps({"version": 1, "cards": [card]}))
+    docs, _ = supplementary_documents(corpus, persona, facts)
+    assert len(docs) == 3
+    assert docs[-1].metadata["fact_id"] == "school"
+    assert json.loads(docs[-1].metadata["evidence"])[0]["scene"] == 1
+    assert "不能摄取营养" in docs[0].text
+    assert "旧设定" in (persona / "persona_card.md").read_text()
+    card["evidence"][0]["sha256"] = "changed"
+    facts.write_text(json.dumps({"version": 1, "cards": [card]}))
+    with pytest.raises(ValueError, match="hash mismatch"):
+        supplementary_documents(corpus, persona, facts)
+
+
+def test_cutoff_and_greetings_do_not_inject_weak_matches():
+    import threading
+    from llama_index.core.schema import NodeWithScore, TextNode
+    rag = object.__new__(Retriever)
+    rag.config = Config(min_score=0.6)
+    rag.lock = threading.Lock()
+    class Backend:
+        def retrieve(self, query):
+            return [NodeWithScore(node=TextNode(text="不相关片段"), score=0.4)]
+    rag.retriever = Backend()
+    for query in ("你好呀！", "今天东京天气如何", ""):
+        messages = [{"role": "user", "content": query}]
+        assert rag.search(query) == []
+        assert rag.augment(messages) == messages
+
+
 class TopicEmbedding(BaseEmbedding):
     """Offline fixture: test retrieval plumbing, not semantic model quality."""
     def _get_text_embedding(self, text):
@@ -142,9 +183,10 @@ def test_disabled_server_needs_no_companion_module(monkeypatch):
     assert server.build_app() is not None
 
 
+@pytest.mark.parametrize("memory_enabled", [False, True])
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("stream", [False, True])
-def test_server_plain_and_sse(monkeypatch, enabled, stream):
+def test_server_plain_and_sse(monkeypatch, tmp_path, enabled, stream, memory_enabled):
     """Real HTTP handler + real torch, with generation replaced by a tiny fixture."""
     import queue
     import torch
@@ -187,23 +229,42 @@ def test_server_plain_and_sse(monkeypatch, enabled, stream):
                 kwargs["streamer"].q.put(None)
             return torch.tensor([[1, 2, 3]])
 
+    queries = []
     class RAG:
         def augment(self, msgs):
+            queries.append(msgs[-1]["content"])
             return [*msgs[:-1], {**msgs[-1], "content": "检索上下文：" + msgs[-1]["content"]}]
 
     monkeypatch.setattr("atri_rag.from_env", lambda: RAG() if enabled else None)
     monkeypatch.setenv("ATRI_RAG_ENABLED", "1" if enabled else "0")
     monkeypatch.setattr(transformers, "TextIteratorStreamer", Streamer)
+    monkeypatch.setenv("ATRI_MEMORY_ENABLED", "1" if memory_enabled else "0")
+    token = "test-only-token-" * 4
+    if memory_enabled:
+        from atri_memory import MemoryStore
+        credentials = tmp_path / "users.json"
+        credentials.write_text(json.dumps({"alice": token}))
+        monkeypatch.setenv("ATRI_MEMORY_USERS_FILE", str(credentials))
+        monkeypatch.setenv("ATRI_MEMORY_DB", str(tmp_path / "state.sqlite3"))
+        MemoryStore(tmp_path / "state.sqlite3").put("alice", "name", "小明")
     tok = Tokenizer()
     monkeypatch.setattr(server, "state", {"tok": tok, "model": Model()})
     monkeypatch.setattr(server, "default_system", lambda: "ATRI 人设")
     with TestClient(server.build_app()) as client:
-        response = client.post("/v1/chat/completions", json={"messages": [
+        response = client.post("/v1/chat/completions", headers={"Authorization": "Bearer " + token}, json={"messages": [
             {"role": "user", "content": [{"type": "text", "text": "学校？"}]}],
             "stream": stream, "max_tokens": None})
         assert response.status_code == 200
-        assert tok.seen[0]["content"] == "ATRI 人设"
-        assert tok.seen[-1]["content"] == ("检索上下文：学校？" if enabled else "学校？")
+        assert tok.seen[0]["content"].startswith("ATRI 人设")
+        expected = "检索上下文：学校？" if enabled else "学校？"
+        assert tok.seen[-1]["content"].endswith(expected)
+        assert queries == (["学校？"] if enabled else [])
+        if memory_enabled:
+            assert "小明" in tok.seen[-1]["content"]
+            # Memory commands must bypass RAG as well as generation.
+            client.post("/v1/chat/completions", headers={"Authorization": "Bearer " + token},
+                        json={"messages": [{"role": "user", "content": "/memory list"}]})
+            assert queries == (["学校？"] if enabled else [])
         if stream:
             chunks = [json.loads(line[6:]) for line in response.text.splitlines()
                       if line.startswith("data: ") and line != "data: [DONE]"]

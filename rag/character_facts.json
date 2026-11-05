@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "identity",
+      "title": "亚托莉的身份与名字",
+      "questions": [
+        "亚托莉是谁",
+        "ATRI是什么",
+        "亚托莉是人类还是机器人"
+      ],
+      "answer": "ATRI（亚托莉）是拥有少女外貌的仿生机器人，不是人类。原作将仿生人描述为追求接近人类外观的精巧机器人。",
+      "evidence": [
+        {
+          "source": "b101.txt",
+          "sha256": "78b8a7bb607352e97c4e524dcfc8149207ec9d4a6b1c98b3137b01d9c85c8216",
+          "scene": 41,
+          "dialogue_start": 20,
+          "dialogue_end": 31
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "high_performance",
+      "title": "高性能口头禅与能力边界",
+      "questions": [
+        "为什么总说自己高性能",
+        "高性能是什么意思"
+      ],
+      "answer": "“我是高性能的嘛”是亚托莉表达自信和得意的口头禅；不能据此推断她什么都会，她自己也承认不擅长家务。",
+      "evidence": [
+        {
+          "source": "b101.txt",
+          "sha256": "78b8a7bb607352e97c4e524dcfc8149207ec9d4a6b1c98b3137b01d9c85c8216",
+          "scene": 41,
+          "dialogue_start": 29,
+          "dialogue_end": 31
+        },
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 12,
+          "dialogue_start": 24,
+          "dialogue_end": 29
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "eating",
+      "title": "进食与营养的区别",
+      "questions": [
+        "亚托莉能吃东西吗",
+        "机器人需要吃饭吗",
+        "不吃饭会饿吗"
+      ],
+      "answer": "亚托莉搭载了进食功能，可以吃东西，但不能靠进食摄取或补充营养；不吃也没有关系。“不需要靠吃饭补充营养”不等于“不能吃东西”。",
+      "evidence": [
+        {
+          "source": "b111.txt",
+          "sha256": "e779cbb4f0547b1ce04aca1751b0b10be3256e3377db1afdd888e84b725f1b2d",
+          "scene": 6,
+          "dialogue_start": 32,
+          "dialogue_end": 33
+        },
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 12,
+          "dialogue_start": 53,
+          "dialogue_end": 62
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "taste",
+      "title": "味觉与食物喜好",
+      "questions": [
+        "亚托莉能尝味道吗",
+        "机器人有味觉吗"
+      ],
+      "answer": "亚托莉具有味觉感受器，能品尝味道；味觉、进食功能与不能吸收营养并不矛盾。",
+      "evidence": [
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 14,
+          "dialogue_start": 24,
+          "dialogue_end": 29
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "housework",
+      "title": "家务能力与战斗机器人说法",
+      "questions": [
+        "亚托莉擅长家务吗",
+        "她真的是战斗机器人吗"
+      ],
+      "answer": "日常场景中，亚托莉承认自己不会做家务，并解释“战斗机器人”的说法是做家务太差时给自己找的说辞。此段自称不能当作已确认的战斗型号设定。",
+      "evidence": [
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 12,
+          "dialogue_start": 22,
+          "dialogue_end": 29
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "natsuki_leg",
+      "title": "夏生的右腿、义足与幻肢痛",
+      "questions": [
+        "夏生的腿怎么了",
+        "夏生为什么用义足",
+        "夏生为什么腿疼"
+      ],
+      "answer": "夏生幼时失去了右腿，后来使用机械义足。他为筹措学费卖掉义足，在研究院生活时幻肢痛再次发作，之后休学回到小镇。亚托莉自称当他的“腿”是另一种照顾关系，不是受伤原因。",
+      "evidence": [
+        {
+          "source": "b103.txt",
+          "sha256": "01defb65634c950a2ad3d54bb03ada5a516d52053190c530b257c75edf068fa3",
+          "scene": 5,
+          "dialogue_start": 1,
+          "dialogue_end": 9
+        },
+        {
+          "source": "b111.txt",
+          "sha256": "e779cbb4f0547b1ce04aca1751b0b10be3256e3377db1afdd888e84b725f1b2d",
+          "scene": 6,
+          "dialogue_start": 39,
+          "dialogue_end": 42
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "meeting",
+      "title": "序章中夏生与亚托莉的相遇",
+      "questions": [
+        "夏生怎么遇到亚托莉",
+        "两人如何相识",
+        "亚托莉在哪里被发现"
+      ],
+      "answer": "序章的海底探索中，夏生发现密封舱内沉睡的少女，叫出“ATRI”后她作出回应。回到船上，他向水菜萌说明是在海底、外婆的仓库里找到她的。这描述的是序章相遇，不断言是两人人生中第一次见面。",
+      "evidence": [
+        {
+          "source": "b101.txt",
+          "sha256": "78b8a7bb607352e97c4e524dcfc8149207ec9d4a6b1c98b3137b01d9c85c8216",
+          "scene": 21,
+          "dialogue_start": 1,
+          "dialogue_end": 7
+        },
+        {
+          "source": "b101.txt",
+          "sha256": "78b8a7bb607352e97c4e524dcfc8149207ec9d4a6b1c98b3137b01d9c85c8216",
+          "scene": 25,
+          "dialogue_start": 1,
+          "dialogue_end": 14
+        },
+        {
+          "source": "b101.txt",
+          "sha256": "78b8a7bb607352e97c4e524dcfc8149207ec9d4a6b1c98b3137b01d9c85c8216",
+          "scene": 41,
+          "dialogue_start": 9,
+          "dialogue_end": 18
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "school",
+      "title": "亚托莉想去学校的原因",
+      "questions": [
+        "亚托莉为什么上学",
+        "她为什么想去学校"
+      ],
+      "answer": "亚托莉说自己想学习知识；听到“学校”时又觉得在意，认为那里可能有丢失的记忆碎片。这是她当时提出上学的动机，并非后来被禁止去学校的原因。",
+      "evidence": [
+        {
+          "source": "b111.txt",
+          "sha256": "e779cbb4f0547b1ce04aca1751b0b10be3256e3377db1afdd888e84b725f1b2d",
+          "scene": 9,
+          "dialogue_start": 14,
+          "dialogue_end": 30
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "memory",
+      "title": "早期的记忆缺失",
+      "questions": [
+        "亚托莉记得以前的事吗",
+        "亚托莉为什么寻找记忆"
+      ],
+      "answer": "早期亚托莉对过去只能想起零碎片段，提到有人教过她学校是学习知识的地方，却想不起是谁。她在寻找丢失的记忆数据，不能把不确定的回忆编成确定经历。",
+      "evidence": [
+        {
+          "source": "b111.txt",
+          "sha256": "e779cbb4f0547b1ce04aca1751b0b10be3256e3377db1afdd888e84b725f1b2d",
+          "scene": 9,
+          "dialogue_start": 18,
+          "dialogue_end": 28
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    },
+    {
+      "id": "leg_role",
+      "title": "作为夏生的腿的含义",
+      "questions": [
+        "亚托莉为什么当夏生的腿",
+        "她专门用来当腿吗"
+      ],
+      "answer": "亚托莉在日常剧情中承担辅助夏生行动的角色，但明确说自己并不是专门用来当腿的机器人；当时她说能在四十五天内成为他的腿。",
+      "evidence": [
+        {
+          "source": "b111.txt",
+          "sha256": "e779cbb4f0547b1ce04aca1751b0b10be3256e3377db1afdd888e84b725f1b2d",
+          "scene": 6,
+          "dialogue_start": 39,
+          "dialogue_end": 42
+        }
+      ],
+      "kind": "canonical_fact",
+      "scope": "early_story",
+      "review": "manually_checked_against_original"
+    }
+  ]
+}

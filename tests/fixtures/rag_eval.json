@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "purpose": "Small curated retrieval regression set; heldout paraphrases are not an unbiased accuracy benchmark. Unknown charging claims must not be inferred from robot identity.",
+  "cases": [
+    {
+      "id": "calibration-1",
+      "split": "calibration",
+      "query": "亚托莉是谁？",
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-1",
+      "split": "heldout",
+      "query": "ATRI到底是什么样的存在？",
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-2",
+      "split": "calibration",
+      "query": "亚托莉是人类还是机器人？",
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-2",
+      "split": "heldout",
+      "query": "她是一个真正的人类女孩吗？",
+      "expected_fact": "identity",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-3",
+      "split": "calibration",
+      "query": "亚托莉能吃东西吗？",
+      "expected_fact": "eating",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-3",
+      "split": "heldout",
+      "query": "你吃饭能补充营养吗？",
+      "expected_fact": "eating",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-4",
+      "split": "calibration",
+      "query": "亚托莉有味觉吗？",
+      "expected_fact": "taste",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-4",
+      "split": "heldout",
+      "query": "你尝得出食物的味道吗？",
+      "expected_fact": "taste",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-5",
+      "split": "calibration",
+      "query": "亚托莉为什么总说高性能？",
+      "expected_fact": "high_performance",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-5",
+      "split": "heldout",
+      "query": "高性能是不是意味着她什么事情都擅长？",
+      "expected_fact": "high_performance",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-6",
+      "split": "calibration",
+      "query": "亚托莉擅长家务吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-6",
+      "split": "heldout",
+      "query": "她是不是很会做饭和料理？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-7",
+      "split": "calibration",
+      "query": "亚托莉真的是战斗机器人吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-7",
+      "split": "heldout",
+      "query": "战斗型号是已经证实的身份吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-8",
+      "split": "calibration",
+      "query": "夏生的腿怎么了？",
+      "expected_fact": "natsuki_leg",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-8",
+      "split": "heldout",
+      "query": "夏生为什么用机械义足，还会腿疼？",
+      "expected_fact": "natsuki_leg",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-9",
+      "split": "calibration",
+      "query": "亚托莉和夏生是怎么认识的？",
+      "expected_fact": "meeting",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-9",
+      "split": "heldout",
+      "query": "故事开头夏生在哪里发现了沉睡的少女？",
+      "expected_fact": "meeting",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-10",
+      "split": "calibration",
+      "query": "亚托莉为什么要去学校？",
+      "expected_fact": "school",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-10",
+      "split": "heldout",
+      "query": "她上学只是为了学知识吗，还有什么动机？",
+      "expected_fact": "school",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-11",
+      "split": "calibration",
+      "query": "亚托莉还记得以前的事吗？",
+      "expected_fact": "memory",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-11",
+      "split": "heldout",
+      "query": "她找寻丢失的记忆时能清楚记得过去吗？",
+      "expected_fact": "memory",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-12",
+      "split": "calibration",
+      "query": "亚托莉是专门用来当腿的吗？",
+      "expected_fact": "leg_role",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "heldout-12",
+      "split": "heldout",
+      "query": "她说成为夏生的腿，是说她本来就是义肢吗？",
+      "expected_fact": "leg_role",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "calibration-negative-1",
+      "split": "calibration",
+      "query": "你好呀",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-1",
+      "split": "heldout",
+      "query": "明天见",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-2",
+      "split": "calibration",
+      "query": "今天东京的天气怎么样？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-2",
+      "split": "heldout",
+      "query": "帮我查一下现在北京下不下雨",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-3",
+      "split": "calibration",
+      "query": "我今天上课有点累",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-3",
+      "split": "heldout",
+      "query": "晚安，做个好梦",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-4",
+      "split": "calibration",
+      "query": "亚托莉需要用什么充电器？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-4",
+      "split": "heldout",
+      "query": "你的充电接口是USB-C吗？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-5",
+      "split": "calibration",
+      "query": "今天黄金价格是多少？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-5",
+      "split": "heldout",
+      "query": "现在苹果股票多少钱？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-6",
+      "split": "calibration",
+      "query": "怎么用Python读取CSV？",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-6",
+      "split": "heldout",
+      "query": "帮我写一段SQL查询",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "calibration-negative-7",
+      "split": "calibration",
+      "query": "",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    },
+    {
+      "id": "heldout-negative-7",
+      "split": "heldout",
+      "query": "   ",
+      "expected_fact": null,
+      "expected_action": "abstain"
+    }
+  ]
+}

@@ -27,9 +27,11 @@ export TIKTOKEN_CACHE_DIR="$PWD/.rag-cache/tiktoken"
 export DISABLE_SAFETENSORS_CONVERSION=1
 python tools/atri_rag.py build \
   --source /Users/nkhszk/atri/_共用资料/原作剧本 \
-  --storage ./rag_storage-v1
+  --storage ./rag_storage-v2 \
+  --persona ./persona \
+  --facts ./rag/character_facts.json
 
-python tools/atri_rag.py search --storage ./rag_storage-v1 '亚托莉是谁？'
+python tools/atri_rag.py search --storage ./rag_storage-v2 '亚托莉是谁？'
 ```
 
 支持 UTF-8 `.md`、普通 `.txt`，以及 JSON 数组格式的剧本（`.json` 或以 JSON 开头的 `.txt`）。剧本按场景生成 Document，保留说话者与从 1 开始的对白编号，再由 SentenceSplitter 切分。不跟随目录内的符号链接，跳过隐藏路径。JSON 格式不符合剧本结构时明确失败，不默默丢弃资料。开头为 `[` 或 `{` 的文本按 JSON 校验，普通资料如有这种开头请先整理成 Markdown 正文。
@@ -47,7 +49,7 @@ export ATRI_BASE=/path/to/Qwen3-8B
 export ATRI_ADAPTER=/path/to/adapter
 export ATRI_SYSTEM=/path/to/atri-system.txt
 export ATRI_RAG_ENABLED=1
-export ATRI_RAG_STORAGE=/path/to/rag_storage-v1
+export ATRI_RAG_STORAGE=/path/to/rag_storage-v2
 python tools/serve_v1_1_8b.py
 ```
 
@@ -60,12 +62,13 @@ python tools/serve_v1_1_8b.py
 | `ATRI_RAG_EMBED_MODEL` | `BAAI/bge-base-zh-v1.5` | 建索引与查询必须相同 |
 | `ATRI_RAG_CHUNK_SIZE` | `256` | LlamaIndex tokenizer 的切分 token 数 |
 | `ATRI_RAG_CHUNK_OVERLAP` | `32` | 相邻片段重叠 token 数 |
-| `ATRI_RAG_TOP_K` | `3` | 最大检索片段数 |
+| `ATRI_RAG_TOP_K` | `3` | 最终最大检索片段数，先召回至少 12 个候选 |
+| `ATRI_RAG_MIN_SCORE` | `0.55` | 相似度过滤阈值，在本项目小型校准集上选取，不代表通用可信度 |
 | `ATRI_RAG_MAX_CONTEXT_CHARS` | `4000` | 注入的参考资料 JSON 字符预算 |
 
 embedding 的输入上限为 512 个自身 tokenizer token。切分 tokenizer 与 embedding tokenizer 不同，极端长文本可能被 embedding 截断；切分参数需结合命中质量调整，调整后重建索引。字符预算只限制新增参考资料，不限制用户历史；超长会话仍由现有客户端管理。
 
-每轮用最后一条 user 消息检索。历史、人设、原始问题均保留，资料 JSON 只在本轮推理中注入，不改数据库。空检索结果沿用原消息。前 k 个片段按相似度返回，没有预设相关性阈值；命中不代表事实正确，生成引用也不保证必然遵循来源。资料作为参考数据处理，不能保证完全消除提示注入。
+每轮用最后一条 user 消息检索。历史、人设、原始问题均保留，资料 JSON 只在本轮推理中注入，不改数据库。空检索结果沿用原消息。召回后先按相关性阈值过滤，对已核对的事实卡给予 0.04 的小幅排序加分，再截取前 k 项。固定问候直接跳过检索。命中仍不代表事实正确，生成引用也不保证必然遵循来源。资料作为参考数据处理，不能保证完全消除提示注入。
 
 普通与流式请求格式不变，可继续通过 AstrBot 等 OpenAI 兼容客户端使用；接口不新增公开 sources 字段，需追溯来源时用 search 命令检查。RAG 不自动接入其他 4B、Colab 或完整版 backend 入口。
 
@@ -87,3 +90,27 @@ python -m pytest tests/test_rag.py -q
 - 真实 `BAAI/bge-base-zh-v1.5` 加载成功，输出 768 维向量。完整 34 个剧本导入 1,069 个场景（含 3 个分支场景），生成 2,237 个节点，并成功从磁盘重新加载检索。
 - 三条人工抽查问题中，“高性能”问题检索到对应自称片段；夏生腿部问题的前 3 项中包含右腿疼痛片段，但首项偏向“作为腿陪伴”的比喻。“亚托莉是谁”未命中足以直接说明身份的资料，宽泛问题的检索质量仍需校准。这里只确认真实检索链路运行成功，不作为检索准确率评估。
 - 本机未做 CUDA/NF4 + PEFT LoRA 的真实生成、真实 GPU SSE、QQ 收发或部署验证。合并或部署前应补齐这些推理相关检查并评估检索质量。
+
+
+## 补充资料与检索调校（第二轮）
+
+`--persona` 只导入指定目录中的 persona_card.md 和 character_profile.md，标记为 project_persona。导入时将旧卡“不吃东西”的错误替换为可以进食但不能吸收营养的原作结论，记录 normalization，原文件保持不变。其他称呼、篇幅、陪伴互动规则作为项目改写资料，不能当作原作设定。当前系统提示词仍是角色控制的最高来源，本次不修改它；若旧 system 本身包含错误，真实生成能否正确区分仍需验证。
+
+`--facts` 导入 rag/character_facts.json 的 10 张概括卡，标记 canonical_fact。每张卡在建索引前校验原作文件 SHA256、场景与对白范围；不匹配则报错。事实卡保留早期剧情范围，不将序章海底相遇断言为人生中第一次见面，也不凭机器人身份编造充电方式。卡片保留出处指针，不包含原作大段引文。
+
+长期记忆 PR #11 已合入本任务分支。记忆认证及明确命令处理保持原有行为；普通聊天先对原始问题进行 RAG，再注入对应用户的记忆 JSON，避免让记忆文本成为检索问题。共同开启、各自关闭的普通/SSE 请求均有测试覆盖，记忆命令绕过检索与生成。
+
+新版完整索引为 1,081 个 Document / 2,281 个节点：1,069 场景 + 2 份项目资料 + 10 张事实卡。索引只保存在本地。自动化测试共 39 项通过，其中包括上游长期记忆测试；生成仍使用替代模型。
+
+38 条固定回归用例分为 19 条校准输入和 19 条预先准备的改写输入，每组 12 个事实检索问题与 7 个应不注入问题。校准只比较 0.50、0.55、0.60、0.65、0.70 五个阈值；0.50/0.55 均 19/19，选较保守的 0.55。固定参数后，改写组为 15/19。失败是“她是一个真正的人类女孩吗”“你尝得出食物的味道吗”“她是不是很会做饭和料理”“战斗型号是已经证实的身份吗”；本轮未据此继续修改参数。这是针对已整理事实的小型回归集，不是独立语料上的通用准确率评测。命中条件为正确事实卡在前 3 项，不衡量最终回答正确率，也不保证其余片段均相关。
+
+可复现命令：
+
+```bash
+python tools/eval_rag.py --storage ./rag_storage-v2 --calibrate --output ./calibration.json
+python tools/eval_rag.py --storage ./rag_storage-v2 --output ./evaluation.json
+```
+
+结果包含剧本片段，应放在私有目录，避免提交 Git。索引配置与命中详情只供本地审阅。
+
+剩余问题主要是代词/省略实体时的检索召回。已查阅官方的 [Query Transformations](https://developers.llamaindex.ai/python/framework/optimizing/advanced_retrieval/query_transformations/) 与 [Rerankers](https://developers.llamaindex.ai/python/framework/module_guides/models/rerankers/)：可以将追问结合上下文改写为自足问题，或更广召回后通过交叉编码器重排。本轮未额外引入这些模型、框架或模型调用；需要另行验证其延迟、资源消耗、拒绝无关资料的效果与多人物指代歧义。GPU LoRA、真实 GPU SSE 和 QQ 链路仍未在本任务验证，PR 保留 Draft。
