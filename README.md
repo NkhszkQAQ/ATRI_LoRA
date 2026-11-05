@@ -173,6 +173,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
 
+可选启用本地剧本 RAG：使用中文 embedding 检索资料，再由现有 Qwen3-8B + LoRA 回答，默认关闭。配置、索引构建与测试见 [RAG 使用说明](docs/RAG.md)。
+
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
 
 ## 📁 目录结构

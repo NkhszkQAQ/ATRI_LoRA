@@ -1,0 +1,4 @@
+# Python 3.12 recommended; no training stack needed.
+llama-index-core>=0.14,<0.15
+llama-index-embeddings-huggingface>=0.6,<0.7
+llama-index-readers-file>=0.5,<0.6

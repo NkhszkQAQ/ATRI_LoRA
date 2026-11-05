@@ -21,6 +21,7 @@ import os
 import threading
 import time
 import uuid
+import asyncio
 
 BASE = os.environ.get("ATRI_BASE", "/root/autodl-tmp/models/models/Qwen--Qwen3-8B")
 ADAPTER = os.environ.get("ATRI_ADAPTER", "/root/autodl-tmp/atri-v1.1-8b/adapter")
@@ -87,6 +88,11 @@ def build_app():
     from fastapi.responses import JSONResponse, StreamingResponse
 
     app = FastAPI()
+    # Preserve standalone script use when the optional RAG feature is disabled.
+    rag = None
+    if os.getenv("ATRI_RAG_ENABLED", "0").lower() in {"1", "true", "yes"}:
+        from atri_rag import from_env
+        rag = from_env()
 
     @app.get("/health")
     def health():
@@ -130,6 +136,9 @@ def build_app():
             sys_text = default_system()
             if sys_text:
                 msgs.insert(0, {"role": "system", "content": sys_text})
+
+        if rag is not None:
+            msgs = await asyncio.to_thread(rag.augment, msgs)
 
         tok, model = state["tok"], state["model"]
         text = tok.apply_chat_template(

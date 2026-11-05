@@ -19,6 +19,9 @@ web/dist/
 web/node_modules/
 *.pyc
 .pytest_cache/
+rag_storage*/
+rag_data/
+.rag-cache/
 
 .admin_bootstrap.tmp
 .venv-train/
