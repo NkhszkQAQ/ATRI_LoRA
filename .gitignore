@@ -18,6 +18,10 @@ node_modules/
 web/dist/
 web/node_modules/
 *.pyc
+memory_data/
+*.sqlite3
+*.sqlite3-*
+memory-users*.json
 .pytest_cache/
 rag_storage*/
 rag_data/

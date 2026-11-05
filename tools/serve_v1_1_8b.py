@@ -93,6 +93,11 @@ def build_app():
     if os.getenv("ATRI_RAG_ENABLED", "0").lower() in {"1", "true", "yes"}:
         from atri_rag import from_env
         rag = from_env()
+    memory = None
+    if os.getenv("ATRI_MEMORY_ENABLED", "0").lower() in {"1", "true", "yes"}:
+        from atri_memory import from_env
+        memory = from_env()
+        memory.install(app)
 
     @app.get("/health")
     def health():
@@ -115,9 +120,7 @@ def build_app():
 
     @app.post("/v1/chat/completions")
     async def chat(req: Request):
-        import torch
-        from transformers import TextIteratorStreamer
-
+        owner = memory.owner(req.headers.get("authorization")) if memory else None
         body = await req.json()
         raw_msgs = body.get("messages") or []
         msgs = []
@@ -132,6 +135,27 @@ def build_app():
         if not msgs:
             return JSONResponse({"error": "messages required"}, status_code=400)
 
+        if memory is not None:
+            reply = None
+            if msgs[-1]["role"] == "user":
+                try:
+                    reply = await asyncio.to_thread(memory.store.command, owner, msgs[-1]["content"])
+                except ValueError as exc:
+                    return JSONResponse({"error": str(exc)}, status_code=400)
+            if reply is not None:
+                response = {"id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+                            "created": int(time.time()), "model": MODEL_NAME}
+                if body.get("stream"):
+                    async def command_stream():
+                        for delta, finish in [({"role": "assistant", "content": reply}, None), ({}, "stop")]:
+                            chunk = {**response, "object": "chat.completion.chunk", "choices": [
+                                {"index": 0, "delta": delta, "finish_reason": finish}]}
+                            yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+                    return StreamingResponse(command_stream(), media_type="text/event-stream")
+                return {**response, "object": "chat.completion", "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}]}
+
         if not any(m["role"] == "system" for m in msgs):
             sys_text = default_system()
             if sys_text:
@@ -139,6 +163,11 @@ def build_app():
 
         if rag is not None:
             msgs = await asyncio.to_thread(rag.augment, msgs)
+        if memory is not None:
+            msgs = await asyncio.to_thread(memory.store.augment, owner, msgs)
+
+        import torch
+        from transformers import TextIteratorStreamer
 
         tok, model = state["tok"], state["model"]
         text = tok.apply_chat_template(

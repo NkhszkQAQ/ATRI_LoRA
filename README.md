@@ -175,6 +175,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 可选启用本地剧本 RAG：使用中文 embedding 检索资料，再由现有 Qwen3-8B + LoRA 回答，默认关闭。配置、索引构建与测试见 [RAG 使用说明](docs/RAG.md)。
 
+**长期记忆（可选）**：8B 独立推理服务支持按用户保存跨会话记忆，使用本地 SQLite，无需额外模型或重新训练。提供查看、更新、删除接口，以及聊天中的 `/memory` 指令；默认关闭。安装与多用户配置见 [长期记忆指南](docs/LONG_TERM_MEMORY.md)。实现与仓库一起按 Apache-2.0 开源，用户记忆和访问密钥不随代码发布。
+
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
 
 ## 📁 目录结构
