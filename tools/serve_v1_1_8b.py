@@ -90,7 +90,8 @@ def build_app():
 
     @app.get("/health")
     def health():
-        return {"ok": "model" in state, "model": MODEL_NAME, "seed": SEED}
+        return {"ok": "model" in state, "model": MODEL_NAME,
+                "seed": "请求可传 seed，默认随机"}
 
     @app.get("/v1/models")
     def models():
@@ -152,6 +153,8 @@ def build_app():
         if temperature <= 0:
             temperature = 0.7
 
+        seed = body.get("seed")
+
         gen_kwargs = dict(
             max_new_tokens=max_tokens,
             do_sample=do_sample,
@@ -162,13 +165,15 @@ def build_app():
             use_cache=True,
         )
 
+        if isinstance(seed, int):
+            torch.manual_seed(seed)   # 用户传了才固定；不传则每轮随机
+
         rid = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
         want_stream = bool(body.get("stream"))
 
         if not want_stream:
             with lock:
-                torch.manual_seed(SEED)
                 with torch.no_grad():
                     out = model.generate(**inputs, **gen_kwargs)
             ans = tok.decode(out[0][prompt_len:], skip_special_tokens=True).strip()
@@ -197,7 +202,6 @@ def build_app():
 
         def run():
             with lock:
-                torch.manual_seed(SEED)
                 with torch.no_grad():
                     model.generate(**inputs, streamer=streamer, **gen_kwargs)
 
