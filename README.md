@@ -215,9 +215,11 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 | 清空全部记忆 | `/memory clear` |
 
 > [!NOTE]
-> 默认关闭，需先在服务器配置并开启。当前仅接入 **8B 独立推理服务**，Colab、4B 和 Gradio 入口不会自动获得此功能。普通聊天不会自动写入记忆；每位用户需要独立密钥，共用密钥就会共用记忆。
+> 默认关闭，需先在服务器配置并开启。直接推理入口接入 **8B 独立服务**，Colab、4B 和 Gradio 不会自动获得此功能；QQ需另行安装下方接入插件。普通聊天不会自动写入记忆；直接使用独立服务的多人客户端需要各自密钥，共用密钥就会共用记忆。
 
 **[开始配置长期记忆 →](docs/LONG_TERM_MEMORY.md)** · [客户端怎么填](docs/LONG_TERM_MEMORY.md#3-连接聊天客户端) · [容量与使用范围](docs/LONG_TERM_MEMORY.md#容量与使用范围)
+
+使用现有 AstrBot + NapCat QQ 机器人时，可选[接入RAG与私聊长期记忆](docs/QQ_BOT.md)：保留原聊天记录和模型切换，按QQ用户明确保存，群聊不带入私人记忆。
 
 实现随仓库按 Apache-2.0 开源，任何用户均可自行部署；用户记忆与访问密钥不随代码发布。
 

@@ -1,0 +1,23 @@
+{
+  "port": 9013,
+  "gateway": "http://127.0.0.1:9000",
+  "backends": {
+    "v1.1-8B": "http://127.0.0.1:8003",
+    "v1.1-DT": "http://127.0.0.1:8003",
+    "v1.0-R": "http://127.0.0.1:8002",
+    "v1.0-C": "http://127.0.0.1:8002"
+  },
+  "rag_model": "v1.1-8B",
+  "rag_storage": "/path/to/rag_storage-v1.3",
+  "tokenizer_path": "/path/to/Qwen3-8B",
+  "shared_secret_file": "/private/path/qq-bridge.secret",
+  "memory_db": "/private/path/qq-memory.sqlite3",
+  "environment": {
+    "HF_HOME": "/path/to/hf-cache",
+    "HF_HUB_OFFLINE": "1",
+    "TIKTOKEN_CACHE_DIR": "/path/to/tiktoken",
+    "DISABLE_SAFETENSORS_CONVERSION": "1",
+    "OMP_NUM_THREADS": "4",
+    "TOKENIZERS_PARALLELISM": "false"
+  }
+}

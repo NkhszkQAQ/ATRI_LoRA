@@ -1,0 +1,5 @@
+name: astrbot_plugin_atri_rag_memory
+desc: ATRI private-chat explicit memory and authenticated RAG context
+version: v1.3.0
+author: ATRI contributors
+repo: https://github.com/NkhszkQAQ/ATRI_LoRA
