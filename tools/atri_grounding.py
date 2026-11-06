@@ -3,7 +3,14 @@ from dataclasses import dataclass, field
 import re
 
 VERSION = "1.3.0"
-UNKNOWN = "主人，这个设定目前没有查到可靠依据，我不能确认。"
+UNKNOWN = "这个……我还不能确认，不能乱说啦。"
+VOICE = ("\n你就是亚托莉，在和眼前的人聊天，不是介绍亚托莉的旁白。"
+         "说自己的事用‘我’，夏生等其他人的经历仍用他们的名字，不把夏生叫成主人。"
+         "资料只用来核对事实，不朗读资料，不说‘按原作’‘资料显示’‘设定中’。"
+         "直接回答，短句，可以有一点得意、犹豫或不好意思，但不硬贴口头禅；"
+         "不用每次都说‘主人’‘高性能’或汇报记忆系统。‘高性能’是对自己的自夸，"
+         "不要拿它泛泛夸饮料、作业或用户。围绕眼前这句话，不替用户编时间、地点或剧情。"
+         "保留事实，不为耍宝编造能力或经历。")
 NAMES = r"亚托莉|ATRI|夏生|水菜萌|凯瑟琳|凛凛花|凜凜花|洋子|龙司|安田"
 SPEC_TERMS = r"充(?:满|一次)?电|电压|接口|续航|供电|电源|能源|电池容量|生产日期|出厂日期|制造商|厂家|生日|身高|体重|多高|多重"
 
@@ -15,6 +22,18 @@ class AnswerTask:
     reference: str = ""
     contract: dict = field(default_factory=dict)
     sources: list = field(default_factory=list)
+    spoken_answer: str = ""
+
+
+def memory_phrase(key, value):
+    """Only present literal values; never ask a model to rewrite user records."""
+    if re.search(r"饮品|饮料", key):
+        return f"你喜欢喝“{value}”"
+    if re.search(r"颜色", key):
+        return f"你喜欢的颜色是“{value}”"
+    if re.fullmatch(r"名字|姓名|昵称|称呼|name", key, re.I):
+        return f"你的{key}是“{value}”"
+    return f"你的{key}是“{value}”"
 
 
 def split_questions(text):
@@ -28,7 +47,7 @@ def memory_question(text):
         r"记得|记住|保存|偏好|喜欢|最爱|名字|姓名|昵称|称呼|叫|代号|口令|颜色|喝|爱好", text))
 
 
-def memory_reference(question, records, context=()):
+def select_memory(question, records):
     groups = [("喝", "饮品", "饮料"), ("颜色",), ("名字", "姓名", "昵称", "称呼", "叫", "name"),
               ("代号", "口令", "校验码"), ("爱好", "兴趣")]
     selected = []
@@ -40,6 +59,11 @@ def memory_reference(question, records, context=()):
         selected = records
     if not selected and re.search(r"喜欢什么|偏好是什么", question):
         selected = [row for row in records if re.search(r"喜好|偏好|喜欢", row["key"])]
+    return selected
+
+
+def memory_reference(question, records, context=()):
+    selected = select_memory(question, records)
     asking_saved = bool(re.search(r"保存|长期记忆", question))
     lookups = selected
     if not selected and not asking_saved:
@@ -65,12 +89,13 @@ def memory_reference(question, records, context=()):
                     match = None
             if match and not re.search(r"什么|哪|吗|呢", match[1]):
                 if asking_saved and selected:
-                    return "主人，你保存的" + row["key"] + "是“" + row["value"] + "”；你本轮说明的是“" + match[1].strip() + "”，尚未改写已保存记忆。"
-                return "主人，你本轮说明的" + row["key"] + "是“" + match[1].strip() + "”（尚未改写已保存记忆）。"
+                    return "之前记下的是：" + memory_phrase(row["key"], row["value"]) + "。不过你刚才说的是“" + match[1].strip() + "”，之前那条还没改。"
+                return (memory_phrase(row["key"], match[1].strip()) + "，你刚才说的，我听到啦。"
+                        + ("这次先按这个来，之前记下的那条还没改。" if selected else ""))
     if not selected:
-        return "主人，目前没有找到你问的这项已保存信息。"
-    content = "；".join(f"{row['key']}是“{row['value']}”" for row in selected)
-    return "主人，你保存的" + content + "。"
+        return "这件事我还没记下来。你再告诉我一次，好吗？"
+    content = "；".join(memory_phrase(row['key'], row['value']) for row in selected)
+    return content + "。我记着呢。"
 
 
 def role_fact_question(text):
@@ -95,6 +120,12 @@ def make_plan(messages, rag=None, records=None, *, external_memory=False, memory
         if records is not None and memory_question(part):
             tasks.append(AnswerTask(part, "memory", memory_reference(part, records, messages)))
             continue
+        if records is not None and re.search(r"(?:用|根据|按).{0,12}我(?:的|喜欢|最爱|偏好|爱喝)", part):
+            selected = select_memory(part, records)
+            if selected:
+                tasks.append(AnswerTask(part, "memory_chat", memory_reference(part, selected),
+                                        {"literal_values": [row["value"] for row in selected]}))
+                continue
         if records is None and not external_memory and memory_question(part) and re.search(r"保存|长期记忆|校验代号", part):
             tasks.append(AnswerTask(part, "memory", "主人，长期记忆功能尚未开启，我不能读取已保存的信息。"))
             continue
@@ -114,7 +145,7 @@ def make_plan(messages, rag=None, records=None, *, external_memory=False, memory
             if reference:
                 import json
                 tasks.append(AnswerTask(part, "fact", reference,
-                                        json.loads(meta.get("answer_contract", "{}")), [meta]))
+                                        json.loads(meta.get("answer_contract", "{}")), [meta], meta.get("spoken_answer", "")))
                 continue
         if rag is not None and role_fact_question(part) and not hits:
             tasks.append(AnswerTask(part, "unknown", UNKNOWN))
@@ -130,6 +161,9 @@ def check_answer(answer, task):
     if not answer.strip():
         return ["empty_answer"]
     problems = []
+    if re.search(r"我.{0,12}(?:认真研究过|研究过|亲自验证过|查阅过资料|调查过)", answer) and not re.search(
+            r"研究过|验证过|查阅过|调查过", task.reference):
+        problems.append("unsupported_personal_experience")
     for pattern in task.contract.get("required", []):
         if not re.search(pattern, answer, re.I):
             problems.append("missing:" + pattern)
@@ -160,6 +194,18 @@ def normalize_names(answer):
     return re.sub(r"阿托莉|阿特莉|亚托里|亞托莉|\bAttry\b", "亚托莉", answer)
 
 
+def check_voice(answer, task):
+    problems = []
+    if re.search(r"原作|资料显示|根据资料|按.*资料|设定中|事实卡|当前资料|已核实|此段|此处|序章", answer):
+        problems.append("narrator")
+    if re.search(r"(?:亚托莉|ATRI)(?:（亚托莉）)?(?:是|有|能|会|想|说|承认|搭载|具有|自称|在|对|不能|不擅长|并|表达)", answer, re.I):
+        problems.append("self_third_person")
+    fact_id = next((m.get("fact_id") for m in task.sources if m.get("fact_id")), None)
+    if fact_id in {"identity", "high_performance", "eating", "taste", "housework", "school", "memory", "leg_role"} and re.search(r"她|(?:亚托莉|ATRI)的", answer, re.I):
+        problems.append("self_third_person")
+    return problems
+
+
 def normalize_output(answer, context=""):
     """Keep grounded/story names; replace unprovided honorific addresses.
 
@@ -188,7 +234,7 @@ def render_plan(tasks, system, generate, history=(), prepare_chat=None):
 
     Unknown facts and saved user values are rendered without asking the model to
     invent them. Fact drafts get one repair attempt; failed contracts fall back
-    to their checked summary, never to an unsupported model answer.
+    to a separately authored in-character answer, never to source narration.
     """
     answers, trace = [], []
     for task in tasks:
@@ -196,11 +242,41 @@ def render_plan(tasks, system, generate, history=(), prepare_chat=None):
             answers.append(task.reference)
             trace.append({"kind": task.kind, "method": "direct_reference"})
             continue
-        if task.kind == "fact" and not task.contract.get("required"):
-            answers.append("主人，按原作资料，" + task.reference)
-            trace.append({"kind": "fact", "method": "source_reference"})
+        if task.kind == "memory_chat":
+            # Allow natural chat, but do not send a draft that drops or changes
+            # the specific saved values the user explicitly asked us to use.
+            answer, method = task.reference, "memory_fallback"
+            for attempt in range(2):
+                prompt = system + VOICE + "\n用户要求用自己的信息回应。必须自然用到相应保存值，信息属于用户，不是你的喜好。"
+                if attempt:
+                    prompt += "上一稿漏用了信息或把归属说错，请按这次的要求重新回答。"
+                msgs = [{"role": "system", "content": prompt},
+                        *[dict(m) for m in history if m.get("role") != "system"],
+                        {"role": "user", "content": task.question}]
+                if prepare_chat is not None:
+                    msgs = prepare_chat(msgs)
+                else:
+                    # Standalone callers also get literal data with instruction
+                    # isolation, without needing access to a memory database.
+                    from atri_memory import augment_records
+                    msgs = augment_records(msgs, [{"key": "用户要求使用的信息", "value": v}
+                                                  for v in task.contract["literal_values"]])
+                draft = normalize_output(generate(msgs), task.question)
+                wrong_owner = re.search(r"我(?:最|也|很|特别)?喜欢(?:喝|吃)?", draft)
+                if (not wrong_owner and not check_voice(draft, task)
+                        and all(v in draft for v in task.contract["literal_values"])):
+                    answer, method = draft, "repair" if attempt else "model"
+                    break
+            answers.append(answer)
+            trace.append({"kind": task.kind, "method": method})
             continue
-        prompt = system
+        if task.kind == "fact" and not task.contract.get("required"):
+            fallback = task.spoken_answer
+            usable = fallback and not (check_answer(fallback, task) + check_voice(fallback, task))
+            answers.append(fallback if usable else UNKNOWN)
+            trace.append({"kind": "fact", "method": "voice_fallback" if usable else "unknown_fallback"})
+            continue
+        prompt = system + VOICE
         if task.kind in {"fact", "reference"}:
             prompt += ("\n本次只回答当前小问题。下面是已经核对出处的事实，不要混用其他剧情阶段，"
                        "不要添加没有依据的姓名、能力或经历。完整表达这些事实，保留否定与不确定性。\n"
@@ -212,14 +288,15 @@ def render_plan(tasks, system, generate, history=(), prepare_chat=None):
         if task.kind == "chat" and prepare_chat is not None:
             model_messages = prepare_chat(model_messages)
         answer = normalize_output(generate(model_messages), task.reference + task.question)
-        if task.kind == "fact" and check_answer(answer, task):
+        if task.kind in {"fact", "reference"} and (check_answer(answer, task) + check_voice(answer, task)):
             answer = normalize_output(generate([
-                {"role": "system", "content": prompt + "\n请重新回答：只用已核实的事实，不自夸、不补充其他结论。"},
+                {"role": "system", "content": prompt + "\n请重新回答：保留事实，作为亚托莉直接说话，自己的事说‘我’，不要用旁白或资料介绍腔。"},
                 {"role": "user", "content": task.question}]), task.reference + task.question)
             method = "repair"
-            if check_answer(answer, task):
-                answer = "主人，按原作资料，" + task.reference
-                method = "source_fallback"
+            if check_answer(answer, task) + check_voice(answer, task):
+                fallback = task.spoken_answer
+                answer = fallback if fallback and not (check_answer(fallback, task) + check_voice(fallback, task)) else UNKNOWN
+                method = "voice_fallback" if answer == fallback else "unknown_fallback"
         answers.append(answer or "主人，这个问题我暂时答不上来。")
         trace.append({"kind": task.kind, "method": method})
     return "\n".join(answers), trace
