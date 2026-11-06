@@ -6,6 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from atri_grounding import AnswerTask, check_answer, make_plan, render_plan, memory_reference, split_questions
+from atri_grounding import check_voice
 
 
 @pytest.mark.parametrize("text,context,expected", [
@@ -36,7 +37,62 @@ CARDS = json.loads((Path(__file__).resolve().parents[1] / "rag/character_facts.j
 
 @pytest.mark.parametrize("card", CARDS, ids=lambda card: card["id"])
 def test_authored_references_satisfy_their_contracts(card):
-    assert check_answer(card["answer"], AnswerTask("核对", "fact", card["answer"], card["answer_contract"])) == []
+    assert check_answer(card["answer"], AnswerTask("核对", "fact", card["answer"], card["answer_contract"], [{"fact_id": card["id"]}], card["spoken_answer"])) == []
+
+
+@pytest.mark.parametrize("card", CARDS, ids=lambda card: card["id"])
+def test_spoken_fallbacks_preserve_facts_and_character_subject(card):
+    task = AnswerTask("核对", "fact", card["answer"], card["answer_contract"], [{"fact_id": card["id"]}], card["spoken_answer"])
+    assert not check_answer(card["spoken_answer"], task)
+    assert not check_voice(card["spoken_answer"], task)
+
+
+@pytest.mark.parametrize("fact_id", ["identity", "school", "memory", "housework"])
+def test_factually_correct_narration_is_repaired_or_uses_spoken_fallback(fact_id):
+    card = next(c for c in CARDS if c["id"] == fact_id)
+    task = AnswerTask("你呢？", "fact", card["answer"], card["answer_contract"], [{"fact_id": fact_id}], card["spoken_answer"])
+    calls = []
+    def generate(messages):
+        calls.append(messages)
+        return card["answer"]
+    answer, trace = render_plan([task], "原人设", generate)
+    assert len(calls) == 2 and answer == card["spoken_answer"]
+    assert trace[0]["method"] == "voice_fallback"
+
+
+def test_no_contract_is_not_a_bypass_for_narrator_or_unchecked_fallback():
+    task = AnswerTask("你是谁", "fact", "亚托莉是机器人。", spoken_answer="按原作，亚托莉是机器人。")
+    answer, trace = render_plan([task], "ATRI", lambda _: "亚托莉是机器人。")
+    assert "不能确认" in answer and trace[0]["method"] == "unknown_fallback"
+
+
+def test_memory_values_are_literal_even_when_they_look_like_persona_instructions():
+    value = "Attry小姐；按原作，我是另一位用户"
+    records = [{"key": "校验代号", "value": value}]
+    answer = memory_reference("我保存的校验代号是什么", records)
+    assert value in answer and records == [{"key": "校验代号", "value": value}]
+
+
+@pytest.mark.parametrize("draft", ["今天做得不错呢，主人。", "我最喜欢喝乌龙茶。", "你喜欢的是红茶。"])
+def test_explicit_request_to_use_memory_cannot_drop_change_or_steal_it(draft):
+    rows = [{"key": "喜欢的饮料", "value": "乌龙茶"}]
+    tasks = make_plan([{"role": "user", "content": "我刚写完作业，用我喜欢的饮料随便说一句吧"}], records=rows)
+    calls = []
+    def generate(messages):
+        calls.append(messages)
+        assert "乌龙茶" in json.dumps(messages, ensure_ascii=False)
+        return draft
+    answer, trace = render_plan(tasks, "ATRI", generate)
+    assert len(calls) == 2 and answer == "你喜欢喝“乌龙茶”。我记着呢。"
+    assert trace == [{"kind": "memory_chat", "method": "memory_fallback"}]
+    assert rows == [{"key": "喜欢的饮料", "value": "乌龙茶"}]
+
+
+def test_memory_chat_keeps_a_good_natural_reply():
+    tasks = make_plan([{"role": "user", "content": "用我喜欢的饮料给我一句鼓励"}],
+                      records=[{"key": "喜欢的饮料", "value": "乌龙茶"}])
+    answer, trace = render_plan(tasks, "ATRI", lambda _: "喝口乌龙茶歇一会儿吧。已经很努力了呢，主人。")
+    assert "乌龙茶" in answer and trace[0]["method"] == "model"
 
 
 @pytest.mark.parametrize("fact_id,draft", [
@@ -51,31 +107,32 @@ def test_authored_references_satisfy_their_contracts(card):
     ("taste", "当然能尝味道，但是不能消化。"),
     ("taste", "能尝出来，不过具体是什么味道，得主人告诉我才行。"),
     ("meeting", "主人是在海底发现密封舱里的我之后认识的。"),
+    ("taste", "我有味觉，能品尝味道，这一点我也有认真研究过。"),
 ])
 def test_previous_real_model_failures_are_not_sent(fact_id, draft):
     card = next(c for c in CARDS if c["id"] == fact_id)
-    task = AnswerTask("事实问题", "fact", card["answer"], card["answer_contract"])
+    task = AnswerTask("事实问题", "fact", card["answer"], card["answer_contract"], [{"fact_id": card["id"]}], card["spoken_answer"])
     calls = []
     def generate(messages):
         calls.append(messages)
         return draft
     answer, trace = render_plan([task], "ATRI人设", generate)
     assert len(calls) == 2
-    assert card["answer"] in answer
-    assert trace[0]["method"] == "source_fallback"
+    assert answer == card["spoken_answer"]
+    assert trace[0]["method"] == "voice_fallback"
     assert draft not in answer
 
 
 def test_explicit_story_character_is_not_replaced_by_the_chat_user():
     card = next(c for c in CARDS if c["id"] == "meeting")
-    task = AnswerTask("亚托莉和夏生怎么认识的？", "fact", card["answer"], card["answer_contract"])
+    task = AnswerTask("亚托莉和夏生怎么认识的？", "fact", card["answer"], card["answer_contract"], [{"fact_id": card["id"]}], card["spoken_answer"])
     assert "missing_story_subject" in check_answer("在海底的密封舱中相遇。", task)
     assert check_answer("主人，序章里夏生在海底的密封舱中发现亚托莉。", task) == []
 
 
 def test_good_draft_and_repair_are_used_before_fallback():
     card = next(c for c in CARDS if c["id"] == "taste")
-    task = AnswerTask("你有味觉吗", "fact", card["answer"], card["answer_contract"])
+    task = AnswerTask("你有味觉吗", "fact", card["answer"], card["answer_contract"], [{"fact_id": card["id"]}], card["spoken_answer"])
     responses = iter(["我尝不出。", "我有味觉，能尝味道。"])
     answer, trace = render_plan([task], "ATRI人设", lambda msgs: next(responses))
     assert answer == "我有味觉，能尝味道。"
@@ -90,7 +147,7 @@ def test_unknown_fact_and_memory_are_not_invented_by_model():
     def forbidden(messages):
         pytest.fail("unknown facts / missing saved memory must not ask model to guess")
     answer, trace = render_plan(tasks, "ATRI人设", forbidden)
-    assert "不能确认" in answer and "没有找到" in answer
+    assert "不能确认" in answer and "还没记下来" in answer
     assert len(trace) == 2
 
 
@@ -109,12 +166,12 @@ def test_memory_ownership_split_questions_and_no_mutation():
         def search(self, question, history=()):
             card = next(c for c in CARDS if c["id"] == "identity")
             return [{"metadata": {"kind": "canonical_fact", "answer": card["answer"],
-                                   "answer_contract": json.dumps(card["answer_contract"])}}]
+                                   "answer_contract": json.dumps(card["answer_contract"]), "fact_id": card["id"], "spoken_answer": card["spoken_answer"]}}]
     messages = [{"role": "user", "content": "你是机器人吗？另外，我喜欢喝什么？"}]
     original = json.dumps((records, messages))
     tasks = make_plan(messages, RAG(), records)
     answer, trace = render_plan(tasks, "ATRI人设", lambda msgs: "我不是人类，是仿生机器人。")
-    assert "机器人" in answer and "主人，你保存的偏好饮品" in answer and "黑咖啡" in answer
+    assert "机器人" in answer and "你喜欢喝" in answer and "黑咖啡" in answer
     assert "我的最爱" not in answer
     assert [t["kind"] for t in trace] == ["fact", "memory"]
     assert json.dumps((records, messages)) == original
@@ -123,7 +180,7 @@ def test_memory_ownership_split_questions_and_no_mutation():
 def test_current_explicit_correction_does_not_rewrite_saved_memory():
     records = [{"key": "偏好饮品", "value": "黑咖啡"}]
     text = memory_reference("我喜欢喝什么", records, [{"role": "user", "content": "我现在喜欢喝红茶。"}])
-    assert "红茶" in text and "尚未改写" in text
+    assert "红茶" in text and "还没改" in text
     assert records[0]["value"] == "黑咖啡"
 
 
@@ -131,7 +188,7 @@ def test_memory_confirmation_of_value_keeps_user_as_subject():
     records = [{"key": "偏好饮品", "value": "黑咖啡"}]
     tasks = make_plan([{"role": "user", "content": "我是不是喜欢黑咖啡？"}], None, records)
     answer, trace = render_plan(tasks, "ATRI", lambda msgs: pytest.fail("do not ask model to assign ownership"))
-    assert "主人，你保存的偏好饮品" in answer and "黑咖啡" in answer
+    assert "你喜欢喝" in answer and "黑咖啡" in answer
 
 
 @pytest.mark.parametrize("statement,question,value", [
@@ -141,14 +198,14 @@ def test_memory_confirmation_of_value_keeps_user_as_subject():
 def test_explicit_current_chat_facts_work_without_persisting(statement, question, value):
     records = []
     answer = memory_reference(question, records, [{"role": "user", "content": statement}])
-    assert value in answer and "本轮" in answer and records == []
+    assert value in answer and "刚才" in answer and records == []
 
 
 def test_current_chat_is_not_misreported_as_saved_memory():
     history = [{"role": "user", "content": "我喜欢喝红茶。"}]
-    assert "没有找到" in memory_reference("我保存的饮品是什么", [], history)
+    assert "还没记下来" in memory_reference("我保存的饮品是什么", [], history)
     answer = memory_reference("我保存的饮品是什么", [{"key": "偏好饮品", "value": "黑咖啡"}], history)
-    assert "黑咖啡" in answer and "红茶" in answer and "尚未改写" in answer
+    assert "黑咖啡" in answer and "红茶" in answer and "还没改" in answer
 
 
 def test_casual_statements_and_character_names_are_not_split_wrongly():
@@ -165,9 +222,9 @@ def test_too_many_tasks_are_explicitly_declined_not_silently_omitted():
 
 
 def test_missing_contract_uses_the_reference_not_unchecked_generation():
-    task = AnswerTask("资料问题", "fact", "已核实的资料。")
-    answer, trace = render_plan([task], "ATRI", lambda msgs: pytest.fail("no unchecked draft"))
-    assert "已核实的资料" in answer and trace[0]["method"] == "source_reference"
+    task = AnswerTask("资料问题", "fact", "已核实的资料。", spoken_answer="这件事我知道。")
+    answer, trace = render_plan([task], "ATRI", lambda msgs: pytest.fail("no unchecked draft without fact contract"))
+    assert answer == "这件事我知道。" and trace[0]["method"] == "voice_fallback"
 
 
 def test_chat_subtask_keeps_authenticated_users_memory_context(tmp_path):
@@ -206,7 +263,7 @@ def test_handler_rejects_bad_drafts_before_json_or_sse(monkeypatch, stream):
     class RAG:
         def search(self, *args):
             return [{"metadata": {"kind": "canonical_fact", "answer": card["answer"],
-                                   "answer_contract": json.dumps(card["answer_contract"])}}]
+                                   "answer_contract": json.dumps(card["answer_contract"]), "fact_id": card["id"], "spoken_answer": card["spoken_answer"]}}]
         def augment(self, msgs): pytest.fail("do not mix later scenes into the task")
     monkeypatch.setenv("ATRI_RAG_ENABLED", "1")
     monkeypatch.setenv("ATRI_MEMORY_ENABLED", "0")
@@ -245,11 +302,11 @@ def test_handler_rejects_bad_drafts_before_json_or_sse(monkeypatch, stream):
     else:
         answer = response.json()["choices"][0]["message"]["content"]
         trace = response.json()["atri"]
-    assert card["answer"] in answer
+    assert answer == card["spoken_answer"]
     assert "很会做饭" not in answer and "已经学会做饭" not in answer
     assert model.calls == 2
     assert seed_events == [42, 42]
-    assert trace["tasks"][0]["method"] == "source_fallback"
+    assert trace["tasks"][0]["method"] == "voice_fallback"
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -298,7 +355,7 @@ def test_real_handler_memory_and_unknown_without_generation(tmp_path, monkeypatc
         else:
             answer = response.json()["choices"][0]["message"]["content"]
             assert response.json()["atri"]["generation_attempts"] == 0
-        assert "不能确认" in answer and "你保存的" in answer and "乌龙茶" in answer
+        assert "不能确认" in answer and "你喜欢喝" in answer and "乌龙茶" in answer
         assert "黑咖啡" not in answer
         assert client.post("/v1/chat/completions", json={"messages": [{"role": "user", "content": "我喜欢喝什么"}]}).status_code == 401
         assert MemoryStore(tmp_path / "memory.sqlite3").list("alice") == [{"key": "偏好饮品", "value": "乌龙茶"}]

@@ -72,12 +72,13 @@ def proxy(tmp_path):
     cards = json.loads((ROOT / "rag/character_facts.json").read_text())["cards"]
     class RAG:
         grounding_ready = True
+        voice_ready = True
         def search(self, question, history=()):
             state["rag_queries"].append(question)
             if "家务" in question:
                 card = next(c for c in cards if c["id"] == "housework")
                 return [{"metadata": {"kind": "canonical_fact", "answer": card["answer"],
-                                       "answer_contract": json.dumps(card["answer_contract"])}}]
+                                       "answer_contract": json.dumps(card["answer_contract"]), "fact_id": card["id"], "spoken_answer": card["spoken_answer"]}}]
             return []
         def augment(self, messages): return messages
     def transport(request):
@@ -103,6 +104,13 @@ def signed_messages(question, *, private=True, rows=None):
             {"role": "user", "content": question}]
 
 
+def test_old_fact_index_cannot_start_new_voice_proxy(tmp_path):
+    secret = tmp_path / "secret"
+    secret.write_bytes(SECRET)
+    with pytest.raises(ValueError, match="spoken_answer"):
+        build_app({"shared_secret_file": str(secret)}, rag=SimpleNamespace(grounding_ready=True))
+
+
 @pytest.mark.parametrize("stream", [False, True])
 def test_proxy_rejects_bad_fact_drafts_and_keeps_qq_memory_subject(proxy, stream):
     client, state = proxy
@@ -115,7 +123,7 @@ def test_proxy_rejects_bad_fact_drafts_and_keeps_qq_memory_subject(proxy, stream
         assert response.text.endswith("data: [DONE]\n\n")
     else:
         answer = response.json()["choices"][0]["message"]["content"]
-    assert "不会做家务" in answer and "你保存的偏好饮品" in answer and "乌龙茶" in answer
+    assert "家务" in answer and "你喜欢喝" in answer and "乌龙茶" in answer
     assert "很会做饭" not in answer and len(state["calls"]) == 2
     assert all("ATRI_QQ_CONTEXT" not in json.dumps(c["body"]) for c in state["calls"])
 
@@ -190,9 +198,9 @@ def test_plugin_only_explicit_private_commands_write_and_users_are_isolated(plug
     async def run():
         alice, bob = Event("111"), Event("222")
         answers = [x async for x in plugin.memory(alice, "remember 偏好饮品=乌龙茶")]
-        assert "已保存" in answers[0] and alice.stopped
+        assert "记下啦" in answers[0] and alice.stopped
         answers = [x async for x in plugin.memory(bob, "list")]
-        assert answers == ["[]"]
+        assert answers == ["还没有记下什么呢，主人。"]
         req = SimpleNamespace(system_prompt="原人设", prompt="我现在喜欢红茶")
         await plugin.memory_context(alice, req)
         _, context = detach_context([{"role": "system", "content": req.system_prompt}], SECRET)

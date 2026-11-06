@@ -223,6 +223,7 @@ def test_grounding_readiness_is_checked_against_persisted_fact_metadata(corpus, 
     cfg = Config(rerank_enabled=False)
     build_index(corpus, storage, cfg, facts=facts, embed_model=TopicEmbedding())
     assert Retriever(storage, cfg, embed_model=TopicEmbedding()).grounding_ready is True
+    assert Retriever(storage, cfg, embed_model=TopicEmbedding()).voice_ready is False
     # Older snapshots had fact IDs and citations, but no complete answer metadata.
     path = storage / "docstore.json"
     data = json.loads(path.read_text())

@@ -9,7 +9,7 @@ from astrbot.core.provider.entities import ProviderRequest
 from astrbot.core.star.filter.command import GreedyStr
 
 from .atri_bridge import attach_context, identity, read_secret
-from .atri_memory import MemoryStore
+from .atri_memory import MemoryStore, command_reply
 
 
 class Main(star.Star):
@@ -29,7 +29,9 @@ class Main(star.Star):
         else:
             try:
                 owner = identity(event)
-                reply = await asyncio.to_thread(self.store.command, owner, "/memory" + (" " + rest.strip() if rest.strip() else ""))
+                command = "/memory" + (" " + rest.strip() if rest.strip() else "")
+                raw = await asyncio.to_thread(self.store.command, owner, command)
+                reply = command_reply(command, raw)
             except ValueError as exc:
                 reply = "未保存：" + str(exc)
         yield event.plain_result(reply)

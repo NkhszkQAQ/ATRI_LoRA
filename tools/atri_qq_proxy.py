@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from atri_bridge import detach_context, read_secret
-from atri_grounding import make_plan, normalize_output, render_plan
+from atri_grounding import VOICE, make_plan, normalize_output, render_plan
 from atri_memory import augment_records
 
 VERSION = "1.3.0"
@@ -24,6 +24,7 @@ RULES = ("\n[核实后的事实与记忆边界]\n亚托莉能进食、品尝味�
          "如旧人设写成不能吃东西，以此处核实后的边界纠正。未核实的充电、接口等规格不猜测。"
          "用户记忆属于当前提问用户，不是ATRI自己的喜好或经历。多个问题逐项回答，"
          "原作事实不能用自夸替代，不把夏生的经历写成当前用户的经历。")
+RULES += VOICE
 
 
 def text_content(value):
@@ -51,6 +52,8 @@ def build_app(config, *, rag=None, client=None, tokenizer=None):
         rag = Retriever(Path(config["rag_storage"]), Config())
     if not getattr(rag, "grounding_ready", False):
         raise ValueError("QQ RAG requires the v1.3 fact index")
+    if not getattr(rag, "voice_ready", False):
+        raise ValueError("QQ RAG requires a fact index rebuilt with spoken_answer")
     if tokenizer is None:
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(config["tokenizer_path"], local_files_only=True, trust_remote_code=False)
@@ -82,6 +85,7 @@ def build_app(config, *, rag=None, client=None, tokenizer=None):
     @app.get("/health")
     def health():
         return {"ok": True, "runtime_version": VERSION, "rag_model": rag_model,
+                "answer_voice": "first_person",
                 "memory": "signed private QQ context", "counts": dict(counts)}
 
     @app.get("/v1/models")
@@ -102,9 +106,9 @@ def build_app(config, *, rag=None, client=None, tokenizer=None):
         records = context["records"] if context and context["private"] else None
         notice = None
         if context and not context["private"]:
-            notice = "私人长期记忆只在私聊中使用，请私聊向我提问。"
+            notice = "这件事到私聊再说吧，主人。群里我不会翻你的私人记忆。"
         elif context is None and re.search(r"保存|长期记忆", text_content(messages[-1].get("content"))):
-            notice = "此入口没有已验证的QQ用户身份，请在QQ私聊中使用长期记忆。"
+            notice = "先在QQ私聊里问我吧，主人。我得认得是谁，才能拿出对应的记忆。"
         name = await asyncio.to_thread(current_model)
         active_rag = rag if name == rag_model else None
         messages = [{**m, "content": text_content(m["content"])}
