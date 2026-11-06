@@ -92,6 +92,7 @@ def proxy(tmp_path):
             "usage": {"prompt_tokens": 10, "completion_tokens": 8}})
     upstream = httpx.Client(transport=httpx.MockTransport(transport))
     config = {"shared_secret_file": str(key), "gateway": "http://gateway",
+              "context_db": str(tmp_path / "context.sqlite3"),
               "backends": {"v1.1-8B": "http://eight", "v1.1-DT": "http://eight", "v1.0-R": "http://four", "v1.0-C": "http://four"}}
     with TestClient(build_app(config, rag=RAG(), client=upstream, tokenizer=Tokenizer())) as client:
         yield client, state
@@ -149,6 +150,62 @@ def test_plain_stream_and_length_limit(proxy):
     assert "data: [DONE]" in response.text and state["calls"][-1]["body"]["stream"] is True
     response = client.post("/v1/chat/completions", json={"max_tokens": 1, "messages": signed_messages("我保存的饮品是什么？")})
     assert response.json()["choices"][0]["finish_reason"] == "length"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_proxy_bounds_working_history_before_retrieval_and_upstream(proxy, stream):
+    client, state = proxy
+    messages = signed_messages("那你换一个比喻")
+    history = []
+    for i in range(12):
+        history += [{"role": "user", "content": f"旧话题{i}"}, {"role": "assistant", "content": "旧回复"}]
+    messages[1:1] = history
+    before = json.dumps(messages)
+    response = client.post("/v1/chat/completions", json={"stream": stream, "messages": messages})
+    assert response.status_code == 200
+    upstream = state["calls"][-1]["body"]["messages"]
+    assert "旧话题0" not in str(upstream) and "旧话题4" in str(upstream)
+    assert "换一个比喻" in str(upstream) and json.dumps(messages) == before
+
+
+def test_proxy_idle_boundary_does_not_reappear_on_followup(proxy):
+    client, state = proxy
+    import time
+    now = int(time.time())
+    def make(history, sent, previous):
+        system = attach_context("原人设", "qq:test:123", [], True, SECRET, turn={
+            "conversation_id": "test-cid", "sent_at": sent, "previous_at": previous})
+        return [{"role": "system", "content": system}, *history, {"role": "user", "content": "继续"}]
+    old = [{"role": "user", "content": "昨天的煽情"}, {"role": "assistant", "content": "睡前回复"}]
+    first = client.post("/v1/chat/completions", json={"messages": make(old, now-1, now-90000)})
+    assert first.status_code == 200 and "睡前回复" not in str(state["calls"][-1])
+    history = old + [{"role": "user", "content": "继续"}, {"role": "assistant", "content": "当前话题"}]
+    second = client.post("/v1/chat/completions", json={"messages": make(history, now, now-1)})
+    assert second.status_code == 200 and "睡前回复" not in str(state["calls"][-1])
+    assert "当前话题" in str(state["calls"][-1])
+
+
+@pytest.mark.parametrize("bad", [{"conversation_id": "a", "sent_at": float("nan"), "previous_at": 0},
+                                 {"conversation_id": "a", "sent_at": 0, "previous_at": 0},
+                                 {"conversation_id": "a", "sent_at": 2000, "previous_at": 0},
+                                 {"conversation_id": "", "sent_at": 1000, "previous_at": 0}])
+def test_signed_conversation_clock_is_validated(bad):
+    system = attach_context("原人设", "qq:test:123", [], True, SECRET, now=1000, turn=bad)
+    with pytest.raises(ValueError):
+        detach_context([{"role": "system", "content": system}], SECRET, now=1001)
+
+
+def test_plugin_transports_conversation_and_platform_sent_time(plugin):
+    async def run():
+        import time
+        now = int(time.time())
+        event = Event("111")
+        event.message_obj = SimpleNamespace(timestamp=now-600)
+        req = SimpleNamespace(system_prompt="原人设", conversation=SimpleNamespace(cid="test-cid", updated_at=now-610))
+        await plugin.memory_context(event, req)
+        _, context = detach_context([{"role": "system", "content": req.system_prompt}], SECRET)
+        assert context["turn"] == {"conversation_id": "test-cid", "sent_at": now-600, "previous_at": now-610}
+    asyncio.run(run())
 
 
 @pytest.fixture

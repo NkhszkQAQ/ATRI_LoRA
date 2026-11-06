@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 from pathlib import Path
 import re
 import time
@@ -24,9 +25,11 @@ def identity(event):
     return "qq:" + platform + ":" + sender
 
 
-def attach_context(system, owner, records, private, secret, *, now=None):
+def attach_context(system, owner, records, private, secret, *, now=None, turn=None):
     data = {"version": 1, "owner": owner, "records": records if private else [],
             "private": bool(private), "time": int(time.time() if now is None else now)}
+    if turn is not None and private:
+        data["turn"] = turn
     raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(raw).decode()
     signature = hmac.new(secret, encoded.encode(), hashlib.sha256).hexdigest()
@@ -71,6 +74,17 @@ def detach_context(messages, secret, *, now=None):
             raise ValueError("invalid records")
         if not data["private"] and rows:
             raise ValueError("group context cannot contain private records")
+        if "turn" in data:
+            turn = data["turn"]
+            if (not data["private"] or not isinstance(turn, dict)
+                    or set(turn) != {"conversation_id", "sent_at", "previous_at"}
+                    or not isinstance(turn["conversation_id"], str)
+                    or not 0 < len(turn["conversation_id"]) <= 128
+                    or any(type(turn[k]) not in (int, float) or not math.isfinite(turn[k])
+                           or turn[k] < 0 for k in ("sent_at", "previous_at"))
+                    or turn["sent_at"] <= 0
+                    or turn["sent_at"] > data["time"] + 10):
+                raise ValueError("invalid conversation clock")
     except (ValueError, TypeError, KeyError) as exc:
         raise ValueError("invalid or expired QQ context") from exc
     return result, data

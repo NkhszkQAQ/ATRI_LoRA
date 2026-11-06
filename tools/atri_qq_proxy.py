@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from atri_bridge import detach_context, read_secret
+from atri_context import ContextWindow
 from atri_grounding import make_plan, normalize_output, render_plan
 from atri_memory import augment_records
 
@@ -46,6 +47,13 @@ def add_system(messages, text):
 
 def build_app(config, *, rag=None, client=None, tokenizer=None):
     secret = read_secret(config["shared_secret_file"])
+    context_options = config.get("context_window", {})
+    context_path = config.get("context_db")
+    if context_path is None and config.get("memory_db"):
+        context_path = str(Path(config["memory_db"]).with_name("qq-context.sqlite3"))
+    if context_path and config.get("memory_db") and Path(context_path).resolve() == Path(config["memory_db"]).resolve():
+        raise ValueError("context_db must be separate from memory_db")
+    window = ContextWindow(context_path, **context_options)
     if rag is None:
         from atri_rag import Config, Retriever
         rag = Retriever(Path(config["rag_storage"]), Config())
@@ -82,6 +90,7 @@ def build_app(config, *, rag=None, client=None, tokenizer=None):
     @app.get("/health")
     def health():
         return {"ok": True, "runtime_version": VERSION, "rag_model": rag_model,
+                "working_context": {"max_history_turns": window.max_turns, "idle_timeout_seconds": window.idle_seconds},
                 "memory": "signed private QQ context", "counts": dict(counts)}
 
     @app.get("/v1/models")
@@ -99,6 +108,7 @@ def build_app(config, *, rag=None, client=None, tokenizer=None):
         except ValueError as exc:
             raise HTTPException(401, "invalid QQ memory context") from exc
         counts["signed_requests" if context else "anonymous_requests"] += 1
+        messages, _ = await asyncio.to_thread(window.select, messages, context)
         records = context["records"] if context and context["private"] else None
         notice = None
         if context and not context["private"]:

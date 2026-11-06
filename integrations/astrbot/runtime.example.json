@@ -12,6 +12,12 @@
   "tokenizer_path": "/path/to/Qwen3-8B",
   "shared_secret_file": "/private/path/qq-bridge.secret",
   "memory_db": "/private/path/qq-memory.sqlite3",
+  "context_db": "/private/path/qq-context.sqlite3",
+  "context_window": {
+    "max_history_turns": 8,
+    "idle_timeout_seconds": 21600,
+    "timezone": "Asia/Tokyo"
+  },
   "environment": {
     "HF_HOME": "/path/to/hf-cache",
     "HF_HUB_OFFLINE": "1",
