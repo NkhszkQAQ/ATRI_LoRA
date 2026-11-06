@@ -51,7 +51,7 @@ def detach_context(messages, secret, *, now=None):
         raise ValueError("ambiguous QQ context")
     encoded, signature = found[0]
     expected = hmac.new(secret, encoded.encode(), hashlib.sha256).hexdigest()
-    if len(encoded) > 40000 or not hmac.compare_digest(signature, expected):
+    if len(encoded) > 131072 or not hmac.compare_digest(signature, expected):
         raise ValueError("invalid QQ context")
     try:
         data = json.loads(base64.urlsafe_b64decode(encoded))

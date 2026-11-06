@@ -42,6 +42,14 @@ def test_group_context_never_includes_private_records():
     assert data["records"] == []
 
 
+@pytest.mark.parametrize("value", ["茶" * 400, "\x00" * 400])
+def test_full_memory_capacity_fits_signed_transport(value):
+    rows = [{"key": "键" * 62 + str(i).zfill(2), "value": value} for i in range(24)]
+    text = attach_context("人设", "qq:test:123", rows, True, SECRET)
+    _, context = detach_context([{"role": "system", "content": text}], SECRET)
+    assert context["records"] == rows
+
+
 def test_memory_augmentation_preserves_media_parts_and_original_objects():
     messages = [{"role": "user", "content": [{"type": "text", "text": "看看图片"},
                                               {"type": "image_url", "image_url": {"url": "data:image/png;base64,TEST"}}]}]
