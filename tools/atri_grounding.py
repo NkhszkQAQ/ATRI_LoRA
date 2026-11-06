@@ -79,7 +79,7 @@ def role_fact_question(text):
             r"机器人|人类|身份|味觉|营养|电池|型号|能吃|吃饭|家务|料理|做饭|下厨|拿手菜|烧菜|炒菜|做菜|厨艺|记忆|学校|" + SPEC_TERMS, text))))
 
 
-def make_plan(messages, rag=None, records=None):
+def make_plan(messages, rag=None, records=None, *, external_memory=False, memory_notice=None):
     if not messages or messages[-1].get("role") != "user":
         return []
     question = messages[-1]["content"]
@@ -89,10 +89,13 @@ def make_plan(messages, rag=None, records=None):
         return [AnswerTask(question, "unknown", "主人，这次的问题有点多，请分几次问，每次最多六个，我再逐项回答。")]
     for index, part in enumerate(parts):
         context = [*messages[:-1], *[{"role": "user", "content": p} for p in parts[:index]]]
+        if records is None and memory_notice and memory_question(part):
+            tasks.append(AnswerTask(part, "memory", memory_notice))
+            continue
         if records is not None and memory_question(part):
             tasks.append(AnswerTask(part, "memory", memory_reference(part, records, messages)))
             continue
-        if records is None and memory_question(part) and re.search(r"保存|长期记忆|校验代号", part):
+        if records is None and not external_memory and memory_question(part) and re.search(r"保存|长期记忆|校验代号", part):
             tasks.append(AnswerTask(part, "memory", "主人，长期记忆功能尚未开启，我不能读取已保存的信息。"))
             continue
         hits = rag.search(part, context) if rag is not None and hasattr(rag, "search") else []
