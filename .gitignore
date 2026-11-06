@@ -23,6 +23,9 @@ memory_data/
 *.sqlite3-*
 memory-users*.json
 .pytest_cache/
+rag_storage*/
+rag_data/
+.rag-cache/
 
 .admin_bootstrap.tmp
 .venv-train/

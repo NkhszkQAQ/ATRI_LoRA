@@ -171,6 +171,8 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 
 ## 🛰️ 推理服务
 
+**v1.3 服务修复**：继续使用 v1.1-R 权重，增加事实检查、失败重答/来源回退、未知设定处理及多问题的记忆归属修复。已完成 111 项自动化检查、62 题检索回归和真实 8B / 长期记忆组合验收，未发布或部署。部分事实回答依赖来源回退，配置、实测范围与限制见 [v1.3 说明](docs/V1_3.md)。
+
 `tools/serve_v1_1_8b.py` 提供 OpenAI 兼容接口（`/v1/chat/completions`，支持流式），通过环境变量配置：
 
 | 变量 | 作用 | 默认 |
@@ -179,10 +181,12 @@ llamafactory-cli train training/configs/sft_v5_deep.yaml
 | `ATRI_ADAPTER` | adapter 目录 | 需自行设置 |
 | `ATRI_SYSTEM` | system prompt 文件 | 需自行设置 |
 | `ATRI_PORT` | 监听端口 | `8003` |
-| `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.1-8B` |
+| `ATRI_MODEL_NAME` | 对外暴露的模型名 | `atri-v1.3-8B` |
 | `ATRI_SEED` | 已弃用：种子改由请求体 `seed` 控制，不传则随机 | — |
 
 另有 `GET /health`、`GET /v1/models`。三个路径变量的内置默认值是作者服务器上的路径，本地跑必须设置。
+
+可选启用本地剧本 RAG：使用中文 embedding 检索资料，再由现有 Qwen3-8B + LoRA 回答，默认关闭。配置、索引构建与测试见 [RAG 使用说明](docs/RAG.md)。
 
 `tools/serve_v1r.py`（4B）和 `tools/serve_openai.py` 用法类似。DT 版需要 `template: qwen3` 并开启 `enable_thinking`。
 
