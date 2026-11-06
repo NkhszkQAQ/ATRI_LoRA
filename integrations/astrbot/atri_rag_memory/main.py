@@ -1,7 +1,9 @@
 """Private-chat explicit memory; QQ identity comes from AstrBot events only."""
 import asyncio
 import json
+import math
 from pathlib import Path
+import time
 
 from astrbot.api import star
 from astrbot.api.event import AstrMessageEvent, filter
@@ -44,4 +46,15 @@ class Main(star.Star):
         owner = identity(event)
         private = event.is_private_chat()
         rows = await asyncio.to_thread(self.store.list, owner) if private else []
-        req.system_prompt = attach_context(req.system_prompt, owner, rows, private, self.secret)
+        turn = None
+        conversation = getattr(req, "conversation", None)
+        if private and conversation and getattr(conversation, "cid", None):
+            now = time.time()
+            sent = getattr(getattr(event, "message_obj", None), "timestamp", None)
+            if type(sent) not in (int, float) or not math.isfinite(sent) or not 0 < sent <= now + 10:
+                sent = now
+            previous = getattr(conversation, "updated_at", 0)
+            if type(previous) not in (int, float) or not math.isfinite(previous) or previous < 0:
+                previous = 0
+            turn = {"conversation_id": str(conversation.cid), "sent_at": sent, "previous_at": previous}
+        req.system_prompt = attach_context(req.system_prompt, owner, rows, private, self.secret, turn=turn)
