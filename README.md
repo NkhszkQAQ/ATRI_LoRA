@@ -88,9 +88,9 @@ python tools/serve_v1_1_8b.py      # 默认监听 127.0.0.1:8003，OpenAI 兼容
 
 权重放在 [GitHub Releases](https://github.com/NkhszkQAQ/ATRI_LoRA/releases)，按底座模型分组：
 
-| 底座 | 版本 | 一句话 | 资产 |
+| 底座 | 版本 | 简介 | 资产 |
 |---|---|---|---|
-| [**Qwen3-8B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-8B) | **v1.1-R** ⭐ 推荐 | 招牌反应最扎实，上下文最稳 | `atri_adapter_v1.1-R.zip` |
+| [**Qwen3-8B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-8B) | **v1.1-R** ⭐ 推荐 | 目前最好的版本 | `atri_adapter_v1.1-R.zip` |
 | | v1.1-DT | 带思考链，实验版（已知问题见 Release 说明） | `atri_adapter_v1.1-DT.zip` |
 | [**Qwen3-4B**](https://github.com/NkhszkQAQ/ATRI_LoRA/releases/tag/Qwen3-4B) | v1.0-R | 贴近作品风格，回复完整度最好 | `atri_adapter_v1.0-R.zip` |
 | | v1.0-C | 更接近原作说话特征，完整度略逊 | `atri_adapter_v1.0-C.zip` |
