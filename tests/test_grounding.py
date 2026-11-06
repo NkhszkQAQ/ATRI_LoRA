@@ -14,6 +14,7 @@ from atri_grounding import AnswerTask, check_answer, make_plan, render_plan, mem
     ("夏生先生的腿受伤了。", "夏生的腿怎么了", "夏生先生的腿受伤了。"),
     ("王先生，您好。", "请给王先生写一封信", "王先生，您好。"),
     ("阿托莉有味觉。", "亚托莉", "亚托莉有味觉。"),
+    ("我是阿特莉，是主人的朋友。", "亚托莉是谁？", "我是亚托莉，是主人的朋友。"),
 ])
 def test_generated_name_cleanup_preserves_names_provided_in_context(text, context, expected):
     from atri_grounding import normalize_output
@@ -46,6 +47,10 @@ def test_authored_references_satisfy_their_contracts(card):
     ("taste", "我不能尝味道，不过有味觉的描述功能。"),
     ("eating", "我不能吃饭，也不能补充营养。"),
     ("school", "她想学习知识，不是为了寻找记忆。"),
+    ("taste", "当然能品尝，不过不能吃进去。"),
+    ("taste", "当然能尝味道，但是不能消化。"),
+    ("taste", "能尝出来，不过具体是什么味道，得主人告诉我才行。"),
+    ("meeting", "主人是在海底发现密封舱里的我之后认识的。"),
 ])
 def test_previous_real_model_failures_are_not_sent(fact_id, draft):
     card = next(c for c in CARDS if c["id"] == fact_id)
@@ -59,6 +64,13 @@ def test_previous_real_model_failures_are_not_sent(fact_id, draft):
     assert card["answer"] in answer
     assert trace[0]["method"] == "source_fallback"
     assert draft not in answer
+
+
+def test_explicit_story_character_is_not_replaced_by_the_chat_user():
+    card = next(c for c in CARDS if c["id"] == "meeting")
+    task = AnswerTask("亚托莉和夏生怎么认识的？", "fact", card["answer"], card["answer_contract"])
+    assert "missing_story_subject" in check_answer("在海底的密封舱中相遇。", task)
+    assert check_answer("主人，序章里夏生在海底的密封舱中发现亚托莉。", task) == []
 
 
 def test_good_draft_and_repair_are_used_before_fallback():

@@ -165,6 +165,34 @@
       ],
       "expected_fact": null,
       "expected_action": "abstain"
+    },
+    {
+      "id": "gpu-cooking-dishes",
+      "split": "gpu_followup",
+      "query": "你能独立做一桌拿手菜吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "gpu-cooking-skill",
+      "split": "gpu_followup",
+      "query": "她的厨艺水平如何？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "gpu-cooking-kitchen",
+      "split": "gpu_followup",
+      "query": "你会下厨吗？",
+      "expected_fact": "housework",
+      "expected_action": "retrieve"
+    },
+    {
+      "id": "gpu-cooking-user-statement",
+      "split": "gpu_followup",
+      "query": "我炒菜烫伤了",
+      "expected_fact": null,
+      "expected_action": "abstain"
     }
   ]
 }

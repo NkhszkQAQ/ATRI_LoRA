@@ -235,7 +235,11 @@ def build_index(source: Path, storage: Path, config: Config, *, embed_model=None
 def _query_pair(original, rewritten):
     # Normalize capability questions without adding an answer or changing the
     # original message. Cooking is a household task, not a synonym for eating.
-    if re.search(r"做饭|烹饪", rewritten) and re.search(r"擅长|很会|会不会|是不是.*会|会做饭|会烹饪", rewritten):
+    if re.search(r"下厨|拿手菜|烧菜|炒菜|做菜|厨艺", rewritten) and re.search(r"擅长|会|能|水平|厨艺", rewritten):
+        subjects = set(re.findall(r"亚托莉|ATRI|夏生|水菜萌|凯瑟琳|凛凛花|凜凜花|洋子|龙司|安田", rewritten, re.I))
+        if len(subjects) == 1:
+            rewritten = next(iter(subjects)) + "擅长做饭等家务吗？"
+    elif re.search(r"做饭|烹饪", rewritten) and re.search(r"擅长|很会|会不会|是不是.*会|会做饭|会烹饪", rewritten):
         rewritten = rewritten.replace("是不是很会", "是否擅长").replace("是不是会", "是否擅长")
         rewritten = rewritten.replace("会不会", "是否擅长")
         if "家务" not in rewritten:

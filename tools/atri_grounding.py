@@ -76,7 +76,7 @@ def memory_reference(question, records, context=()):
 def role_fact_question(text):
     return bool(re.search(r"谁|什么|啥|何|哪|几|怎么|为什么|吗|是否|是不是|会不会|能不能|要不要|多少|多高|多重|多久|能否|有没有", text) and (re.search(NAMES, text, re.I) or (
         re.search(r"你|她|战斗型号", text) and re.search(
-            r"机器人|人类|身份|味觉|营养|电池|型号|能吃|吃饭|家务|料理|做饭|记忆|学校|" + SPEC_TERMS, text))))
+            r"机器人|人类|身份|味觉|营养|电池|型号|能吃|吃饭|家务|料理|做饭|下厨|拿手菜|烧菜|炒菜|做菜|厨艺|记忆|学校|" + SPEC_TERMS, text))))
 
 
 def make_plan(messages, rag=None, records=None):
@@ -133,6 +133,20 @@ def check_answer(answer, task):
     for pattern in task.contract.get("forbidden", []):
         if re.search(pattern, answer, re.I):
             problems.append("contradiction:" + pattern)
+    # These cards explicitly distinguish eating from nutrition. A taste answer
+    # must not reintroduce the same wrong eating claim under another wording.
+    if "进食" in task.reference and "营养" in task.reference and re.search(
+            r"(?:不能|无法|不会)(?:真正|实际|直接)?(?:吃进去|吞下|吞咽|吃东西|吃饭|进食|消化)", answer):
+        problems.append("unsupported_eating_limit")
+    if "味觉" in task.reference and re.search(
+            r"(?:味道|味觉|酸甜).*(?:得|需要|要|依赖|靠).*(?:主人|你).*(?:告诉|描述)|"
+            r"(?:得|需要|依赖|靠).*(?:主人|你).*(?:告诉|描述).*(?:味道|味觉|酸甜)", answer):
+        problems.append("taste_assigned_to_user")
+    if "夏生" in task.reference:
+        if "夏生" in task.question and "夏生" not in answer:
+            problems.append("missing_story_subject")
+        if re.search(r"主人(?:是|在|把|曾|从|发现|救|失去|找到)|(?:我和主人|主人和我).*(?:初遇|相遇|认识)", answer):
+            problems.append("story_assigned_to_user")
     for match in re.finditer(r"([\u4e00-\u9fff]{1,4})(?:先生|小姐)", answer):
         if match[1] not in task.reference:
             problems.append("unsupported_address")
@@ -140,7 +154,7 @@ def check_answer(answer, task):
 
 
 def normalize_names(answer):
-    return re.sub(r"阿托莉|亚托里|亞托莉|\bAttry\b", "亚托莉", answer)
+    return re.sub(r"阿托莉|阿特莉|亚托里|亞托莉|\bAttry\b", "亚托莉", answer)
 
 
 def normalize_output(answer, context=""):

@@ -24,6 +24,8 @@ from llama_index.core.embeddings import BaseEmbedding
     ("你会烹饪吗？", [], "亚托莉会烹饪等家务吗？"),
     ("亚托莉擅长做饭吗？", [], "亚托莉擅长做饭等家务吗？"),
     ("亚托莉喜欢什么食物？", [], "亚托莉喜欢什么食物？"),
+    ("你能独立做一桌拿手菜吗？", [], "亚托莉擅长做饭等家务吗？"),
+    ("她的厨艺水平如何？", [], "亚托莉擅长做饭等家务吗？"),
 ])
 def test_bounded_query_rewriting(question, history, expected):
     from atri_rag import query_variants
