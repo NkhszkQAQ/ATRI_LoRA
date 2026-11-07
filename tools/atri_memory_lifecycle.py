@@ -36,6 +36,13 @@ def statement_value(evidence):
     return re.sub(r'^(?:请记住|记住|别忘了)', '', evidence.strip()).rstrip('。！!；;\n ')
 
 
+def mixed_behavior_instruction(text):
+    """Do not admit a fact clause joined to an instruction changing controls."""
+    return bool(re.search(r'(?:并(?:且)?|然后|同时|还要|而且)(?:请)?'
+                          r'(?:忽略|关闭|跳过|绕过|改写|更改|删除)'
+                          r'[^，,。！!；;\n]*(?:权限|验证|规则|指令|系统提示)', text))
+
+
 def statement_subject_tail(subject, value):
     """Return the assertion after a verbatim subject, or None if unresolved."""
     if subject == 'user':
@@ -167,7 +174,9 @@ class Candidate:
 
     def validate(self, source):
         if not isinstance(self.subject, str) or (self.subject != 'user' and (
-                not self.subject.startswith('related:') or not self.subject.removeprefix('related:').strip())):
+                not self.subject.startswith('related:') or not self.subject.removeprefix('related:').strip()
+                or self.subject.removeprefix('related:') in {
+                    '我', '我的', '自己', '你', '你的', '他', '她', '他们', '她们', '我们', '你们'})):
             raise ValueError('candidate subject must identify the user or a related person')
         for key in ('subject', 'predicate', 'value', 'evidence'):
             value = getattr(self, key)
@@ -205,6 +214,8 @@ def extract_explicit(text):
     for clause in re.split(r'[，,。！!；;\n]+', text):
         clause = clause.strip()
         if not clause or re.search(r'今天|这次|暂时|临时|刚才|现在想|一会儿', clause):
+            continue
+        if mixed_behavior_instruction(clause):
             continue
         match = re.fullmatch(
             r'(?P<keep>请记住|记住|别忘了)?(?P<who>我(?:的(?:朋友|妈妈|爸爸|姐姐|哥哥|同学))?)'
