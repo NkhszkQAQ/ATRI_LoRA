@@ -138,6 +138,7 @@ def main():
     parser.add_argument('--base-manifest', type=Path, required=True)
     parser.add_argument('--memory-policy', type=Path)
     parser.add_argument('--planner-adapter', action='store_true', help='also use the role LoRA for internal planning')
+    parser.add_argument('--planner-schema', action='store_true', help='experimental token-level JSON planning constraint')
     parser.add_argument('--stage', choices=['daily', 'school_later', 'eden_partial', 'past_recovered'], default='daily')
     parser.add_argument('--script-source', type=Path)
     parser.add_argument('--story-cards', type=Path, nargs='+')
@@ -175,13 +176,15 @@ def main():
         'adapter_sha256': adapter_sha, 'adapter_config_sha256': file_sha(args.adapter/'adapter_config.json'),
         'loaded_adapter_tensors_exact': len(observed),
         'planner_adapter_enabled': args.planner_adapter, 'answer_adapter_enabled': True,
+        'planner_schema_enabled': args.planner_schema,
         'enable_thinking': False, 'quantization': model.config.quantization_config.to_dict(),
         'versions': {p: version(p) for p in ['torch', 'transformers', 'peft', 'bitsandbytes']},
         'chat_template_sha256': hashlib.sha256(tok.chat_template.encode()).hexdigest()}
     # Exact loaded tensor equality is recorded; it is not semantic acceptance.
     def factory(body):
         from atri_generation import hf_generator
-        return hf_generator(tok, model, loader.lock, body, planner_adapter=args.planner_adapter)
+        return hf_generator(tok, model, loader.lock, body, planner_adapter=args.planner_adapter,
+                            planner_schema=args.planner_schema)
     search = None
     if bool(args.story_cards) != bool(args.script_source):
         raise ValueError('--story-cards and --script-source are required together')

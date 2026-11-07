@@ -89,3 +89,22 @@ def test_over_budget_input_is_rejected_before_generation_or_adapter_switch():
     with pytest.raises(ValueError,match='token budget'):
         generate([],kind='plan')
     assert model.modes==[] and model.layer.disable_adapters is False
+
+
+def test_optional_schema_is_applied_only_to_planning_and_is_trace_serializable(monkeypatch):
+    import json
+    import atri_plan_schema
+    callbacks = []
+    callback = lambda batch_id, sent: [4,9]
+    monkeypatch.setattr(atri_plan_schema, 'planner_constraint',
+                        lambda tokenizer: (callback, {'schema_sha256': 'fixture'}))
+    class CaptureModel(Model):
+        def generate(self, **kwargs):
+            callbacks.append(kwargs.get('prefix_allowed_tokens_fn'))
+            return super().generate(**kwargs)
+    generate = hf_generator(Tokenizer(), CaptureModel(), threading.Lock(), {}, planner_schema=True)
+    plan = generate([], kind='plan'); answer = generate([], kind='answer')
+    assert callbacks == [callback, None]
+    assert plan.metadata['format_constraint'] == {'schema_sha256': 'fixture'}
+    assert answer.metadata['format_constraint'] is None
+    json.dumps(plan.metadata)

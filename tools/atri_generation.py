@@ -11,10 +11,13 @@ class GeneratedText(str):
         return obj
 
 
-def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_input_tokens=8192):
+def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_input_tokens=8192,
+                 planner_schema=False):
     import torch
     if type(max_input_tokens) is not int or max_input_tokens < 512:
         raise ValueError('server input token budget must be at least 512')
+    if type(planner_schema) is not bool:
+        raise ValueError('planner_schema must be a server boolean')
     seed, limit = options.get('seed', 17), options.get('max_tokens', 256)
     if type(seed) is not int:
         raise ValueError('integer seed required')
@@ -40,6 +43,11 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
                       repetition_penalty=1.1,
                       pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, use_cache=True)
         started = time.monotonic()
+        constraint = None
+        generation_metadata = dict(kwargs)
+        if kind == 'plan' and planner_schema:
+            from atri_plan_schema import planner_constraint
+            kwargs['prefix_allowed_tokens_fn'], constraint = planner_constraint(tokenizer)
         disabled = kind == 'plan' and not planner_adapter
         with lock, torch.inference_mode(), (model.disable_adapter() if disabled else nullcontext()):
             actual_modes = {m.disable_adapters for m in model.modules()
@@ -55,7 +63,8 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         finish = 'stop' if output_ids and output_ids[-1] in eos else ('length' if len(output_ids) >= kwargs['max_new_tokens'] else 'stop')
         return GeneratedText(tokenizer.decode(output_ids, skip_special_tokens=True), {
             'prompt_token_ids': prompt_ids, 'output_token_ids': output_ids,
-            'seed': seed, 'generation': kwargs, 'enable_thinking': False,
+            'seed': seed, 'generation': generation_metadata, 'enable_thinking': False,
+            'format_constraint': constraint,
             'adapter_enabled': not disabled, 'finish_reason': finish,
             'seconds': time.monotonic()-started})
     return generate

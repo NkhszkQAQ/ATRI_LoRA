@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--allow-final', action='store_true', help='only after development gate; consumes the holdout')
     parser.add_argument('--sse', action='store_true')
     parser.add_argument('--planner-adapter', action='store_true')
+    parser.add_argument('--planner-schema', action='store_true')
     args = parser.parse_args()
     seal = json.loads(args.seal.read_text())
     assert args.cases.name in seal['files']
@@ -85,6 +86,7 @@ def main():
     identity = {'model':'Qwen3-8B+adapter-'+args.adapter_sha[:12], 'adapter_sha256':args.adapter_sha,
         'loaded_tensors_exact':len(observed), 'adapter_dtypes':sorted(set(observed.values())),
         'planner_adapter_enabled':args.planner_adapter, 'answer_adapter_enabled':True,
+        'planner_schema_enabled':args.planner_schema,
         'base_and_tokenizer_sha256':verified, 'enable_thinking':False,
         'chat_template_sha256':hashlib.sha256(tok.chat_template.encode()).hexdigest(),
         'quantization':model.config.quantization_config.to_dict(), 'default_generation':model.generation_config.to_dict(),
@@ -127,7 +129,8 @@ def main():
     model.generate = captured_generate
     def factory(body):
         from atri_generation import hf_generator
-        implementation = hf_generator(tok, model, original.lock, body, planner_adapter=args.planner_adapter)
+        implementation = hf_generator(tok, model, original.lock, body, planner_adapter=args.planner_adapter,
+                                      planner_schema=args.planner_schema)
         def generate(messages, *, kind):
             active['kind']=kind
             return implementation(messages,kind=kind)
