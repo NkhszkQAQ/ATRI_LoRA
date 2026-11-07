@@ -209,6 +209,7 @@ class LifecycleStore:
                 if previous['digest'] != digest:
                     raise ValueError('source event ID reused with different text')
                 return {**receipt, 'status': 'duplicate'}
+            observed_records = set()
             for c in candidates:
                 score = 0.5*c.confidence + 0.35*c.stability + 0.15*c.importance
                 if c.confidence < self.policy.admission or c.stability < 0.7 or (
@@ -225,10 +226,18 @@ class LifecycleStore:
                 if exact:
                     if prior and prior['id'] != exact['id']:
                         db.execute("UPDATE facts SET status='superseded' WHERE id=? AND owner=?", (prior['id'], owner))
+                    if exact['id'] in observed_records:
+                        # Repeated clauses or overlapping extraction paths in
+                        # one user event are not independent confirmations.
+                        # A later explicit keep still applies to that record.
+                        db.execute('UPDATE facts SET pinned=MAX(pinned,?) WHERE id=? AND owner=?',
+                                   (int(c.explicit_keep), exact['id'], owner))
+                        continue
                     db.execute('UPDATE facts SET confirmed=?,confirmations=confirmations+1,'
                                'pinned=MAX(pinned,?) WHERE id=? AND owner=?',
                                (now, int(c.explicit_keep), exact['id'], owner))
                     receipt['confirmed'].append(exact['id'])
+                    observed_records.add(exact['id'])
                     continue
                 # A name is single-valued. Preferences can coexist; only a direct
                 # polarity/degree correction to the same object invalidates one.
@@ -242,6 +251,7 @@ class LifecycleStore:
                      c.evidence, source_id, now, now, 1, c.confidence, c.importance,
                      c.stability, int(c.explicit_keep), 'active', conflicts[-1]['id'] if conflicts else None))
                 receipt['saved'].append(ident)
+                observed_records.add(ident)
             db.execute('INSERT INTO processed VALUES (?,?,?)', (owner, source_id, digest))
         if receipt['saved'] or receipt['confirmed']:
             receipt['status'] = 'saved'

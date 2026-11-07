@@ -219,6 +219,16 @@ def test_correction_evidence_can_include_the_original_sentence_terminator(tmp_pa
     assert model_candidates([candidate],'后来他问我把喜欢的颜色改成蓝色。')==[]
 
 
+def test_explicit_and_model_extraction_do_not_double_confirm_one_user_statement(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    candidate = dict(subject='user', predicate='preference', value='画画',
+                     evidence='我喜欢画画。', polarity='positive', degree='ordinary')
+    _, trace = Runtime(store, generator({'candidates':[candidate]})).reply('alice', 'one', dialogue('我喜欢画画。'))
+    assert len(trace['operations'][0]['saved']) == 1
+    assert trace['operations'][0]['confirmed'] == []
+    assert store.records('alice')[0]['confirmations'] == 1
+
+
 def test_canonical_search_uses_current_and_user_context_when_planner_omits_queries(tmp_path):
     store=LifecycleStore(tmp_path/'facts.db');calls=[]
     def search(query,history):

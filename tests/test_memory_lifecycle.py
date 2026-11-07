@@ -121,6 +121,29 @@ def test_concurrent_event_is_counted_once(tmp_path):
         store.observe('alice', '2', '我喜欢散步')
 
 
+def test_repeated_clauses_count_once_per_record_per_user_event(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    first = store.observe('alice', 'one', '我喜欢画画，我喜欢画画，我喜欢画画')
+    ident = first['saved'][0]
+    assert first['saved'] == [ident] and first['confirmed'] == []
+    assert store.records('alice')[0]['confirmations'] == 1
+    second = store.observe('alice', 'two', '我喜欢画画，请记住我喜欢画画')
+    assert second['saved'] == [] and second['confirmed'] == [ident]
+    row = store.records('alice')[0]
+    assert row['confirmations'] == 2 and row['pinned'] == 1
+    assert store.observe('alice', 'two', '我喜欢画画，请记住我喜欢画画')['status'] == 'duplicate'
+    assert store.records('alice')[0]['confirmations'] == 2
+
+
+def test_distinct_facts_and_later_polarity_changes_are_not_deduplicated(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    store.observe('alice', 'one', '我喜欢画画，我喜欢散步，我不喜欢画画，我喜欢画画')
+    assert {(r['value'], r['polarity']) for r in store.records('alice')} == {
+        ('画画', 'positive'), ('散步', 'positive')}
+    assert len(store.records('alice', active_only=False)) == 4
+    assert all(r['confirmations'] == 1 for r in store.records('alice', active_only=False))
+
+
 def test_ranking_decay_confirmation_and_pinned_retention(tmp_path):
     store = LifecycleStore(tmp_path / 'facts.db', clock=lambda: 100)
     store.observe('alice', '1', '请记住我喜欢画画，我对花生过敏')
