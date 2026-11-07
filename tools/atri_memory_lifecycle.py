@@ -366,6 +366,9 @@ class LifecycleStore:
                 for row in conflicts:
                     db.execute('INSERT OR IGNORE INTO fact_corrections VALUES (?,?,?,?)',
                                (owner, row['id'], ident, source_id))
+                    # A subsequent model candidate may explicitly identify the
+                    # correction already performed by this event's grammar path.
+                    applied_corrections.add((row['id'], ident))
                 receipt['saved'].append(ident)
                 observed_records.add(ident)
                 if c.supersedes:

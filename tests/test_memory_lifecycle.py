@@ -155,6 +155,26 @@ def test_existing_lifecycle_database_gains_links_without_rewriting_old_rows(tmp_
     assert store.forget('alice', value='小雨')['count'] == 2  # Legacy links still work.
 
 
+def test_implicit_then_explicit_correction_in_one_event_is_idempotent(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    old = store.observe('alice', 'one', '我喜欢橄榄')['saved'][0]
+    text = '我不再喜欢橄榄了。'
+    receipt = store.observe('alice', 'two', text, [
+        Candidate('user', 'preference', '橄榄', text[:-1], polarity='negative'),
+        Candidate('user', 'preference', '橄榄', text, polarity='negative', supersedes=old),
+    ])
+    assert receipt['status'] == 'saved' and len(receipt['saved']) == 1
+    assert receipt['confirmed'] == []
+    record = store.records('alice')[0]
+    assert record['polarity'] == 'negative' and record['confirmations'] == 1
+    assert record['supersedes'] == old
+    with store.connect() as db:
+        assert db.execute('SELECT old_id,new_id FROM fact_corrections').fetchall()[0][:] == (old, record['id'])
+    assert store.observe('alice', 'two', text)['status'] == 'duplicate'
+    store.forget_event('alice', 'three', '忘记橄榄', [record['id']])
+    assert store.records('alice', active_only=False) == []
+
+
 def test_explicit_correction_is_scoped_and_keeps_other_preferences(tmp_path):
     store = LifecycleStore(tmp_path / 'facts.db')
     store.observe('alice', '1', '我喜欢红色，我喜欢画画')
