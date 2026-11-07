@@ -185,3 +185,22 @@ def test_other_class_does_not_override_previous_quote_frame(tmp_path):
         {'role':'user','content':'我喜欢下雪'}]
     Runtime(store,generator({'utterance_kind':'other'})).reply('alice','1',messages)
     assert store.records('alice')==[]
+
+
+@pytest.mark.parametrize('text',['我对芝麻不过敏','我对芝麻不再过敏了'])
+def test_negative_allergy_corrects_the_same_substance_without_changing_owner(text,tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    store.observe('alice','old','我对芝麻过敏')
+    store.observe('bob','old','我对芝麻过敏')
+    Runtime(store,generator({})).reply('alice','new',dialogue(text))
+    rows=store.records('alice')
+    assert [(r['value'],r['predicate'],r['polarity']) for r in rows]==[('芝麻','allergy','negative')]
+    assert store.records('bob')[0]['polarity']=='positive'
+    assert len(store.records('alice',active_only=False))==2
+
+
+def test_model_cannot_turn_negative_allergy_into_positive():
+    text='我对芝麻不过敏'
+    item=dict(subject='user',predicate='allergy',value='芝麻',evidence=text,polarity='positive')
+    assert model_candidates([item],text)==[]
+    assert model_candidates([{**item,'polarity':'negative'}],text)[0].polarity=='negative'

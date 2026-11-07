@@ -110,23 +110,27 @@ def extract_explicit(text):
         who, op, value = match['who'], match['op'], match['value'].strip()
         if op in {'不再喜欢', '不喜欢', '讨厌'}:
             value = value.removesuffix('了')
-        if re.search(r'说|告诉|觉得|可能|也许|应该|不一定|但是|不过|而是|并非|不是|才怪', value):
+        if re.search(r'说|告诉|觉得|可能|也许|应该|不一定|但是|不过(?!敏)|而是|并非|不是|才怪', value):
             continue
         subject = 'user' if who == '我' else 'related:' + who
         predicate, importance, degree = 'preference', 0.5, 'ordinary'
+        negative = op in {'不再喜欢', '不喜欢', '讨厌'}
         if op == '叫':
             predicate, importance = 'name', 0.7
         elif op == '对':
+            value = value.removesuffix('了')
             if not value.endswith('过敏'):
                 continue
-            predicate, value, importance = 'allergy', value[:-2].strip(), 1.0
+            negative = value.endswith(('不过敏', '不再过敏'))
+            suffix = '不再过敏' if value.endswith('不再过敏') else '不过敏' if negative else '过敏'
+            predicate, value, importance = 'allergy', value[:-len(suffix)].strip(), 1.0
         elif op == '最喜欢':
             degree = 'favorite'
         if not value:
             continue
         # Do not guess a food/drink taxonomy. Preserve the actual reported value.
         candidates.append(Candidate(subject, predicate, value, clause,
-            polarity='negative' if op in {'不再喜欢', '不喜欢', '讨厌'} else 'positive',
+            polarity='negative' if negative else 'positive',
             degree=degree, importance=importance, explicit_keep=bool(match['keep'])))
     return candidates
 

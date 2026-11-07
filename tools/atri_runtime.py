@@ -68,7 +68,7 @@ def model_candidates(proposals, current):
         predicate = item.get('predicate')
         if predicate not in {'preference', 'name', 'allergy'}:
             continue
-        negative = bool(re.search(r'不喜欢|不爱|讨厌|不再喜欢', evidence))
+        negative = bool(re.search(r'不喜欢|不爱|讨厌|不再喜欢|不过敏|不再过敏', evidence))
         if item.get('polarity', 'positive') != ('negative' if negative else 'positive'):
             continue
         favorite = bool(re.search(r'最喜欢|最爱', evidence))
