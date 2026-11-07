@@ -16,6 +16,24 @@ def _string(**kwargs):
     return {'type': 'string', **kwargs}
 
 
+def _candidate_schema(*, statement):
+    properties = {
+        'subject': _string(minLength=1, maxLength=160),
+        'predicate': _string(enum=['statement'] if statement else ['preference', 'name', 'allergy']),
+        'value': _string(minLength=1, maxLength=256),
+        'evidence': _string(minLength=1, maxLength=1024),
+        'polarity': _string(enum=['positive'] if statement else ['positive', 'negative']),
+        'degree': _string(enum=['ordinary'] if statement else ['ordinary', 'favorite']),
+        'importance': {'type': 'number', 'minimum': 0, 'maximum': 1},
+        'stability': {'type': 'number', 'minimum': 0, 'maximum': 1},
+        'supersedes': _string(minLength=1, maxLength=80),
+    }
+    required = ['subject', 'predicate', 'value', 'evidence', 'polarity', 'degree']
+    if statement:
+        required += ['importance', 'stability']
+    return _object(properties, required=required)
+
+
 PLAN_SCHEMA = _object({
     'utterance_kind': _string(enum=['self_report', 'quotation', 'joke', 'temporary', 'other']),
     'memory_scores': {'type': 'array', 'maxItems': 128, 'items': _object({
@@ -23,17 +41,8 @@ PLAN_SCHEMA = _object({
         'relevance': {'type': 'number', 'minimum': 0, 'maximum': 1}})},
     'queries': {'type': 'array', 'maxItems': 2,
                 'items': _string(minLength=1, maxLength=180)},
-    'candidates': {'type': 'array', 'maxItems': 16, 'items': _object({
-        'subject': _string(minLength=1, maxLength=160),
-        'predicate': _string(enum=['preference', 'name', 'allergy', 'statement']),
-        'value': _string(minLength=1, maxLength=256),
-        'evidence': _string(minLength=1, maxLength=1024),
-        'polarity': _string(enum=['positive', 'negative']),
-        'degree': _string(enum=['ordinary', 'favorite']),
-        'importance': {'type': 'number', 'minimum': 0, 'maximum': 1},
-        'stability': {'type': 'number', 'minimum': 0, 'maximum': 1},
-        'supersedes': _string(minLength=1, maxLength=80)},
-        required=['subject', 'predicate', 'value', 'evidence', 'polarity', 'degree'])},
+    'candidates': {'type': 'array', 'maxItems': 16, 'items': {'anyOf': [
+        _candidate_schema(statement=False), _candidate_schema(statement=True)]}},
     'forget_ids': {'type': 'array', 'maxItems': 16,
                    'items': _string(minLength=1, maxLength=80)},
 })

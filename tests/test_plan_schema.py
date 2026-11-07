@@ -67,6 +67,39 @@ def test_schema_is_not_a_semantic_or_authorization_check():
     assert accepted(item)
 
 
+@pytest.mark.parametrize('missing', ['importance', 'stability', 'evidence', 'subject'])
+@pytest.mark.parametrize('reverse_order', [False, True])
+def test_statement_cannot_complete_without_its_required_fields(missing, reverse_order):
+    item = plan()
+    candidate = dict(subject='user', predicate='statement', value='我不是老师',
+        evidence='我不是老师。', polarity='positive', degree='ordinary', importance=.8, stability=.9)
+    if reverse_order:
+        candidate = dict(reversed(list(candidate.items())))
+    item['candidates'] = [candidate]
+    assert accepted(item)
+    del candidate[missing]
+    assert not accepted(item)
+
+
+@pytest.mark.parametrize('field,value', [('polarity', 'negative'), ('degree', 'favorite')])
+def test_statement_preserves_whole_proposition_contract(field, value):
+    item = plan()
+    item['candidates'] = [dict(subject='user', predicate='statement', value='我不是老师',
+        evidence='我不是老师', polarity='positive', degree='ordinary', importance=.8, stability=.9)]
+    item['candidates'][0][field] = value
+    assert not accepted(item)
+
+
+def test_mixed_candidates_keep_nonstatement_scores_optional():
+    item = plan()
+    item['candidates'].append(dict(subject='related:我姐姐', predicate='statement',
+        value='我姐姐是工程师', evidence='我姐姐是工程师。', polarity='positive',
+        degree='ordinary', importance=.8, stability=.9))
+    assert accepted(item)
+    item['candidates'].reverse()
+    assert accepted(item)
+
+
 def test_transformers_prefix_filters_tokens_with_independent_request_state():
     import torch
     from tokenizers import Tokenizer, decoders
