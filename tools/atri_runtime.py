@@ -54,7 +54,7 @@ def model_candidates(proposals, current):
         # Require a whole self-report clause, not a substring of a quoted or
         # attributed claim. Subjects other than the speaker must be explicit.
         clauses = [s.strip() for s in re.split(r'[，,。！!；;\n]+', current)]
-        if evidence not in clauses or re.search(r'今天|这次|暂时|临时|刚才|可能|也许|如果|说|告诉|不是|不一定', evidence):
+        if evidence.rstrip('。！!；;\n ') not in clauses or re.search(r'今天|这次|暂时|临时|刚才|可能|也许|如果|说|告诉|不是|不一定', evidence):
             continue
         subject = item.get('subject')
         if subject == 'user':
@@ -196,8 +196,18 @@ class Runtime:
         selected = self.store.rank(owner, lambda records: [related.get(r['id'], 0) for r in records])
         trace['selected_memories'] = selected
         hits, seen = [], set()
-        for query in proposal.get('queries', [])[:2]:
-            if self.search is None or not isinstance(query, str) or not query.strip() or len(query) > 180:
+        # Always retrieve against the actual utterance. Planner omissions must
+        # not suppress relevant canonical knowledge in an ordinary invitation.
+        # Generated queries supplement this; the reranker decides relevance.
+        queries = [current]
+        prior_users = [m['content'] for m in messages[:-1] if m['role']=='user'][-2:]
+        if prior_users:
+            queries.append('\n'.join([*prior_users, current]))
+        queries.extend(q for q in proposal.get('queries', [])[:2]
+                       if isinstance(q,str) and q.strip() and len(q)<=180)
+        trace['retrieval_queries'] = list(dict.fromkeys(queries)) if self.search else []
+        for query in trace['retrieval_queries']:
+            if not query.strip():
                 continue
             for hit in self.search(query, messages[:-1]):
                 meta = hit.get('metadata', {})

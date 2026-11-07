@@ -32,7 +32,7 @@ def test_proactive_selection_is_not_gated_by_question_or_keyword(tmp_path):
                  'metadata': {'kind': 'canonical_fact', 'allowed_stages': ['daily'], 'source': 'fixture'}}]
     runtime = Runtime(store, generator(plan), search=search)
     raw, trace = runtime.reply('alice', '2', dialogue('一起去参加周末的活动吧'))
-    assert calls == ['亚托莉学习新知识']
+    assert calls == ['一起去参加周末的活动吧', '亚托莉学习新知识']
     assert trace['selected_memories'][0]['value'] == '画画'
     assert trace['retrieved'][0]['node_id'] == 'school'
     assert raw == trace['calls'][-1]['raw_first'] == trace['final']
@@ -204,3 +204,29 @@ def test_model_cannot_turn_negative_allergy_into_positive():
     item=dict(subject='user',predicate='allergy',value='芝麻',evidence=text,polarity='positive')
     assert model_candidates([item],text)==[]
     assert model_candidates([{**item,'polarity':'negative'}],text)[0].polarity=='negative'
+
+
+def test_correction_evidence_can_include_the_original_sentence_terminator(tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    store.observe('alice','fixture','我喜欢红色，我喜欢读书')
+    text='我把喜欢的颜色改成蓝色。'
+    old=next(r for r in store.records('alice') if r['value']=='红色')
+    candidate=dict(subject='user',predicate='preference',value='蓝色',evidence=text,
+                   polarity='positive',degree='ordinary',supersedes=old['id'])
+    Runtime(store,generator({'candidates':[candidate]})).reply('alice','new',dialogue(text))
+    assert {r['value'] for r in store.records('alice')}=={'蓝色','读书'}
+    # Allowing a terminator does not allow a partial quotation or an old turn.
+    assert model_candidates([candidate],'后来他问我把喜欢的颜色改成蓝色。')==[]
+
+
+def test_canonical_search_uses_current_and_user_context_when_planner_omits_queries(tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db');calls=[]
+    def search(query,history):
+        calls.append(query)
+        return []
+    messages=dialogue('你平时想学些什么？')+[
+        {'role':'assistant','content':'这句助手回答不是检索事实。'},
+        {'role':'user','content':'那我们一起去上课吧'}]
+    _,trace=Runtime(store,generator({'queries':[]}),search=search).reply('alice','new',messages)
+    assert calls==['那我们一起去上课吧','你平时想学些什么？\n那我们一起去上课吧']
+    assert trace['retrieved']==[] and trace['retrieval_queries']==calls

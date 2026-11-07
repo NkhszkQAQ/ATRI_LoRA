@@ -58,8 +58,8 @@ class StageCorpus:
     def search(self, query, history=()):
         if not isinstance(query, str) or not query.strip() or not self.cards:
             return []
-        # The planner has already resolved multi-turn references; no punctuation,
-        # fixed entity, or question-word gate is used here.
+        # Real utterances/context and optional planner rewrites share this path;
+        # no punctuation, fixed entity, or question-word gate is used here.
         texts = [card['title'] + '\n' + card['answer'] + '\n' + '；'.join(card.get('questions', [])) for card in self.cards]
         scores = self.reranker.score(query, texts)
         if len(scores) != len(texts):
@@ -70,7 +70,7 @@ class StageCorpus:
                 raise ValueError('invalid reranker score')
             if score >= self.threshold:
                 hits.append({'node_id': 'canonical:' + card['id'], 'score': float(score),
-                    'retrieval_query': query, 'text': text,
+                    'retrieval_query': query, 'text': card['title'] + '\n' + card['answer'],
                     'metadata': {'kind': 'canonical_summary', 'source': 'facts/' + card['id'],
                                  'allowed_stages': card['allowed_stages'], 'evidence': card['evidence'],
                                  'event_time': card.get('event_time', 'see_citation'),
