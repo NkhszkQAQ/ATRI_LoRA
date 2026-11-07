@@ -12,7 +12,8 @@ import re
 import sqlite3
 
 from atri_memory_lifecycle import (Candidate, LifecycleStore, extract_explicit,
-    statement_value, statement_subject_tail, statement_correction_matches)
+    statement_value, statement_subject_tail, statement_correction_matches, statement_topic,
+    STATEMENT_ATTRIBUTES)
 
 PROFILE = 'memory-rag-v1.2-dev'
 STAGES = {'daily', 'school_later', 'eden_partial', 'past_recovered'}
@@ -134,6 +135,58 @@ def model_candidates(proposals, current):
     return accepted
 
 
+def deletion_matches(record, current):
+    """Ground a proposed destructive target in the user's explicit scope.
+
+    Valid owner-scoped IDs alone do not establish intent. Accept complete facts
+    and explicit subject/attribute forms; ambiguous pronouns and unsupported
+    paraphrases leave the record intact. The model never expands this scope.
+    """
+    match = re.fullmatch(r'(?:请)?(?:忘记|删掉|删除|不要再记住)(.+?)[。！!\s]*', current.strip())
+    if not match:
+        return False
+    target = match[1]
+    if re.search(r'[，,；;？?“”「」『』\"\n]|但是|除了|除外|保留|不要|别删|如果|假如', target):
+        return False
+    target = re.sub(r'(?:这件事|这个事实|这条记录|的(?:记录|信息|记忆))$', '', target)
+    subject = '我' if record['subject'] == 'user' else record['subject'].removeprefix('related:')
+    if not target.startswith(subject):
+        return False
+    tail = target[len(subject):]
+    predicate = record['predicate']
+    if predicate == 'statement':
+        if target == record['value']:
+            return True
+        if tail not in {'的' + attribute for attribute in STATEMENT_ATTRIBUTES}:
+            return False
+        topic = statement_topic(record['subject'], record['value'])
+        # Reuse the same attribute aliases as correction matching.
+        requested = statement_topic(record['subject'], subject + tail + '是待删除值')
+        return topic is not None and topic == requested
+    if predicate == 'name':
+        return tail in {'的名字', '的姓名'} or target == statement_value(record['evidence'])
+    if predicate == 'preference':
+        return (tail in {'的喜好', '的偏好', '对' + record['value'] + '的喜好',
+                         '对' + record['value'] + '的偏好'}
+                or target == statement_value(record['evidence']))
+    if predicate == 'allergy':
+        return tail in {'的过敏', '的过敏情况', '对' + record['value'] + '过敏',
+                        '对' + record['value'] + '的过敏'}
+    return False
+
+
+def answer_operations(operations):
+    """Keep execution outcomes, without random persistence IDs in model input."""
+    result = []
+    for operation in operations:
+        item = {k: v for k, v in operation.items() if k not in {'saved', 'confirmed'}}
+        for field in ('saved', 'confirmed'):
+            if field in operation:
+                item[field + '_count'] = len(operation[field])
+        result.append(item)
+    return result
+
+
 class Runtime:
     def __init__(self, store: LifecycleStore, generate, *, search=None, stage='daily',
                  context_chars=7000):
@@ -194,6 +247,9 @@ class Runtime:
         delete_intent = delete_intent and proposal.get('utterance_kind') in {'self_report','other'}
         if delete_intent:
             targets = [resolved for i in proposal.get('forget_ids', [])[:16] if (resolved := resolve_id(i))]
+            rejected_targets = [ident for ident in targets if not deletion_matches(known[ident], current)]
+            targets = [ident for ident in targets if ident not in rejected_targets]
+            trace['deletion_validation'] = {'accepted': targets, 'rejected': rejected_targets}
             try:
                 trace['operations'].append(self.store.forget_event(owner,event_id,current,targets))
             except sqlite3.Error as exc:
@@ -271,7 +327,7 @@ class Runtime:
         hits = sorted(hits_by_id.values(), key=lambda hit: -hit.get('score', 0))
         trace['retrieved'] = hits
         memory_data = [{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree', 'evidence', 'source_id')} for r in selected]
-        context = {'story_stage': self.stage, 'operations': trace['operations'], 'memory': memory_data, 'references': []}
+        context = {'story_stage': self.stage, 'operations': answer_operations(trace['operations']), 'memory': memory_data, 'references': []}
         for hit in hits:
             trial = {**context, 'references': context['references'] + [hit]}
             if len(json.dumps(trial, ensure_ascii=False)) <= self.context_chars:
