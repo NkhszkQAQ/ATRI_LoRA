@@ -1,0 +1,188 @@
+import concurrent.futures
+from dataclasses import replace
+from pathlib import Path
+import sqlite3
+import sys
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from atri_memory_lifecycle import Candidate, LifecycleStore, Policy, extract_explicit
+
+
+@pytest.mark.parametrize('text', [
+    '朋友说我喜欢咖啡', '他说：“我喜欢咖啡”', '我喜欢咖啡吗？',
+    '我今天喜欢喝热水', '我喜欢咖啡，开玩笑的', '假如我喜欢咖啡',
+    '比如我喜欢咖啡', '我喜欢咖啡才怪', '我喜欢你说的那句话',
+    '我们出去走走吧', '我这次选热水', '建议你试试咖啡',
+])
+def test_ambiguous_or_temporary_is_not_automatically_saved(text):
+    assert extract_explicit(text) == []
+
+
+def test_subject_negation_degree_and_single_important_fact(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    store.observe('alice', 'one', '我的朋友喜欢抹茶，我不喜欢咖啡，我最喜欢蓝色，我对花生过敏')
+    rows = store.records('alice')
+    assert {(r['subject'], r['value'], r['polarity'], r['degree']) for r in rows} == {
+        ('related:我的朋友', '抹茶', 'positive', 'ordinary'),
+        ('user', '咖啡', 'negative', 'ordinary'),
+        ('user', '蓝色', 'positive', 'favorite'),
+        ('user', '花生', 'positive', 'ordinary'),
+    }
+    assert next(r for r in rows if r['predicate'] == 'allergy')['importance'] == 1
+    assert store.records('bob') == []
+
+
+def test_restart_correction_and_deletion_do_not_restore_history(tmp_path):
+    path = tmp_path / 'facts.db'
+    store = LifecycleStore(path)
+    first = store.observe('alice', '1', '我喜欢咖啡')['saved'][0]
+    store.observe('bob', '1', '我喜欢咖啡')
+    store.observe('alice', '2', '我不喜欢咖啡')
+    store = LifecycleStore(path)
+    assert len(store.records('alice')) == 1
+    assert store.records('alice')[0]['supersedes'] == first
+    assert store.records('alice')[0]['polarity'] == 'negative'
+    assert len(store.records('alice', active_only=False)) == 2
+    assert store.forget('alice', value='咖啡')['count'] == 2
+    assert store.observe('alice', '1', '我喜欢咖啡')['status'] == 'duplicate'
+    assert store.records('alice', active_only=False) == []
+    assert len(store.records('bob')) == 1
+
+
+def test_multiple_likes_survive_name_correction(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    store.observe('alice', '1', '我喜欢画画，我喜欢散步，我叫小林')
+    store.observe('alice', '2', '我叫小雨')
+    assert {r['value'] for r in store.records('alice')} == {'画画', '散步', '小雨'}
+
+
+def test_explicit_correction_is_scoped_and_keeps_other_preferences(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    store.observe('alice', '1', '我喜欢红色，我喜欢画画')
+    old = next(r for r in store.records('alice') if r['value'] == '红色')
+    c = Candidate('user', 'preference', '蓝色', '我把喜欢的颜色改成蓝色', supersedes=old['id'])
+    store.observe('alice', '2', c.evidence, [c])
+    assert {r['value'] for r in store.records('alice')} == {'蓝色', '画画'}
+    with pytest.raises(ValueError, match='same owner'):
+        store.observe('bob', '2', c.evidence, [c])
+    assert not store.records('bob')
+
+
+def test_negative_sentence_particle_does_not_create_another_object(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    store.observe('alice', '1', '我喜欢咖啡')
+    store.observe('alice', '2', '我现在不喜欢咖啡了')
+    assert [(r['value'], r['polarity']) for r in store.records('alice')] == [('咖啡', 'negative')]
+
+
+def test_concurrent_event_is_counted_once(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        receipts = list(pool.map(lambda _: store.observe('alice', '1', '我喜欢画画'), range(8)))
+    assert sum(r['status'] == 'saved' for r in receipts) == 1
+    assert store.records('alice')[0]['confirmations'] == 1
+    store.observe('alice', '2', '我喜欢画画')
+    assert store.records('alice')[0]['confirmations'] == 2
+    with pytest.raises(ValueError, match='reused'):
+        store.observe('alice', '2', '我喜欢散步')
+
+
+def test_ranking_decay_confirmation_and_pinned_retention(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db', clock=lambda: 100)
+    store.observe('alice', '1', '请记住我喜欢画画，我对花生过敏')
+    score = lambda rows: [0.9 for _ in rows]
+    day0 = store.rank('alice', score, now=100)
+    day30 = store.rank('alice', score, now=100+30*86400)
+    day60 = store.rank('alice', score, now=100+60*86400)
+    assert all(a['score'] > b['score'] > c['score'] for a, b, c in zip(day0, day30, day60))
+    assert all(r['recency'] == pytest.approx(0.5) for r in day30)
+    assert store.rank('alice', lambda rows: [0 for _ in rows], now=100) == []
+    assert all(r['confirmations'] == 1 for r in store.records('alice'))
+    store.observe('alice', '2', '我喜欢画画')
+    repeated = next(r for r in store.rank('alice', score, now=100+30*86400) if r['value'] == '画画')
+    assert repeated['recency'] > 0.5
+    store.rank('alice', score, now=100+10000*86400)
+    assert len(store.records('alice')) == 2
+    assert next(r for r in store.records('alice') if r['value'] == '画画')['pinned']
+
+
+def test_admission_evidence_and_atomic_rollback(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db')
+    c = Candidate('user', 'preference', '画画', '我喜欢画画')
+    with pytest.raises(ValueError, match='cite'):
+        store.observe('alice', '1', '他说你好', [c])
+    assert store.observe('alice', '2', c.evidence, [replace(c, stability=0.2)])['rejected'] == 1
+    # Simulate an actual SQLite failure during the transaction, after candidate
+    # validation. Neither a success receipt nor a processed event may survive.
+    with store.connect() as db:
+        db.execute("CREATE TRIGGER fail_write BEFORE INSERT ON facts BEGIN SELECT RAISE(ABORT,'disk failure'); END")
+    with pytest.raises(sqlite3.IntegrityError, match='disk failure'):
+        store.observe('alice', '3', c.evidence)
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM processed WHERE source_id='3'").fetchone()[0] == 0
+    assert store.records('alice') == []
+
+
+def test_ranking_only_passes_authenticated_owner_rows_and_enforces_budget(tmp_path):
+    store = LifecycleStore(tmp_path / 'facts.db', Policy(context_chars=128))
+    store.observe('alice', '1', '我喜欢画画')
+    store.observe('bob', '1', '我喜欢唱歌')
+    seen = []
+    def relevance(rows):
+        seen.extend(rows)
+        return [1 for _ in rows]
+    assert store.rank('alice', relevance) == []
+    assert {r['owner'] for r in seen} == {'alice'}
+    with pytest.raises(ValueError, match='relevance'):
+        store.rank('alice', lambda rows: [float('nan')])
+
+
+@pytest.mark.parametrize('options', [
+    {'half_life_days': 0}, {'half_life_days': float('nan')},
+    {'admission': 2}, {'limit': True}, {'context_chars': 0},
+    {'confirmation_gain': -1}, {'minimum_relevance': float('inf')},
+])
+def test_policy_rejects_invalid_options(options):
+    with pytest.raises(ValueError):
+        Policy(**options)
+
+
+def test_legacy_database_is_rejected_without_changing_its_contents(tmp_path):
+    path = tmp_path/'legacy.db'
+    with sqlite3.connect(path) as db:
+        db.execute('CREATE TABLE memories(owner TEXT, value TEXT)')
+        db.execute("INSERT INTO memories VALUES('fictional','preserved')")
+    with pytest.raises(ValueError, match='separate'):
+        LifecycleStore(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute('SELECT * FROM memories').fetchall() == [('fictional','preserved')]
+        assert db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall() == [('memories',)]
+
+
+def test_delete_event_replay_cannot_remove_later_reintroduced_fact(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    old = store.observe('alice','1','我喜欢画画')['saved'][0]
+    assert store.forget_event('alice','2','忘记画画',[old])['count'] == 1
+    new = store.observe('alice','3','我喜欢画画')['saved'][0]
+    assert store.forget_event('alice','2','忘记画画',[new])['status'] == 'duplicate'
+    with pytest.raises(ValueError,match='reused'):
+        store.forget_event('alice','3','忘记画画',[new])
+    assert store.records('alice')[0]['id'] == new
+
+
+def test_delete_event_is_owner_scoped_and_atomic(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    a = store.observe('alice','1','我喜欢画画')['saved'][0]
+    b = store.observe('bob','1','我喜欢唱歌')['saved'][0]
+    with pytest.raises(ValueError,match='owner'):
+        store.forget_event('alice','2','忘记这些',[a,b])
+    assert store.records('alice')[0]['id'] == a
+    with store.connect() as db:
+        db.execute("CREATE TRIGGER fail_delete BEFORE DELETE ON facts BEGIN SELECT RAISE(ABORT,'failure'); END")
+    with pytest.raises(sqlite3.IntegrityError):
+        store.forget_event('alice','2','忘记这些',[a])
+    with store.connect() as db:
+        assert db.execute("SELECT count(*) FROM processed WHERE owner='alice' AND source_id='2'").fetchone()[0] == 0
+    assert store.records('alice')[0]['id'] == a
