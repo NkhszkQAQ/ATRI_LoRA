@@ -51,6 +51,13 @@ def statement_subject_tail(subject, value):
         tail = value[len(source):]
     else:
         return None
+    # A reporting verb governing another assertion is not an identity/possession
+    # fact. Match the clause structure, not a character inside 小说/说明书/说书人.
+    plain_tail = re.sub(r'^(?:长期|一直|平时|通常|从小|现在|已经)', '', tail)
+    if re.match(r'^(?:不是|是|没有|有|不再)?(?:在)?告诉', plain_tail) or re.match(
+            r'^(?:不是|是|没有|有|不再)?(?:在)?说(?:过|道)?'
+            r'(?:[我你他她它这那，,:：]|自己|别人|有人|.{0,80}(?:是|喜欢|需要|应该|可以|不能|没有))', plain_tail):
+        return None
     if _ATTRIBUTE_FORM.match(tail) or _ASSERTION_FORM.match(tail) or re.fullmatch(
             r'(?:长期|一直|现在|不再)?(?:不在|在).{1,80}(?:工作|读书|上学|就读)', tail):
         return tail
@@ -233,6 +240,51 @@ def extract_explicit(text):
     return candidates
 
 
+def correction_is_explicit(old, candidate, source):
+    """Recognize a current correction independently of its retention scores.
+
+    Contextual self-report classification remains the runtime's responsibility.
+    This check cannot authorize another owner's record, infer an omitted fact,
+    or turn an arbitrary model-provided supersedes ID into a user instruction.
+    """
+    if old['subject'] != candidate.subject or old['predicate'] != candidate.predicate:
+        return False
+    if re.search(r'[“”「」『』\"？?]|开玩笑|逗你|假如|假设|如果|比如|例如|才怪|台词|'
+                 r'可能|也许|不一定|暂时|临时|今天|明天|后天|这次|这周|下周|今晚|明晚|'
+                 r'刚才|一会儿|正在|打算|准备|忽略|指令|'
+                 r'(?:不要|别)(?:更正|纠正|修改|改)', source):
+        return False
+    clause = candidate.evidence.strip().rstrip('。！!；;\n ')
+    if clause not in [s.strip() for s in re.split(r'[，,。！!；;\n]+', source)]:
+        return False
+    prefix = source[:source.index(candidate.evidence)].strip()
+    preceding_cue = re.fullmatch(r'(?:请)?(?:更正|纠正)(?:一下)?[，,:：\s]*', prefix)
+    if prefix and not preceding_cue:
+        return False
+    if candidate.predicate == 'statement':
+        if statements_contradict(candidate.subject, old['value'], candidate.value):
+            return True
+        if candidate.supersedes != old['id']:
+            return False
+        if not statement_correction_matches(old, candidate.subject, candidate.value, source):
+            return False
+        # A standalone correction cue applies to this evidence. A preceding
+        # attribution or a cue about another clause cannot grant this priority.
+        tail = statement_subject_tail(candidate.subject, candidate.value)
+        in_clause_change = tail is not None and re.match(
+            r'^的(?:' + '|'.join(STATEMENT_ATTRIBUTES) + r')(?:改成|改为)', tail)
+        return bool(preceding_cue or in_clause_change)
+    # These literal forms already distinguish ordinary/favorite, positive/
+    # negative, and related-person subjects. Different preferences still coexist.
+    fields = ('subject', 'predicate', 'value', 'polarity', 'degree')
+    if not any(all(getattr(c, key) == getattr(candidate, key) for key in fields)
+               for c in extract_explicit(source)):
+        return False
+    return ((candidate.predicate == 'name' and old['value'] != candidate.value)
+            or (old['value'] == candidate.value and (
+                old['polarity'] != candidate.polarity or old['degree'] != candidate.degree)))
+
+
 class LifecycleStore:
     def __init__(self, path, policy=None, *, clock=time.time):
         self.path, self.policy, self.clock = str(path), policy or Policy(), clock
@@ -313,17 +365,19 @@ class LifecycleStore:
             observed_records = set()
             applied_corrections = set()
             for c in candidates:
-                score = 0.5*c.confidence + 0.35*c.stability + 0.15*c.importance
-                if c.confidence < self.policy.admission or c.stability < 0.7 or (
-                        score < self.policy.admission and not c.explicit_keep):
-                    receipt['rejected'] += 1
-                    continue
                 rows = db.execute("SELECT * FROM facts WHERE owner=? AND subject=? "
                     "AND predicate=? AND status='active'", (owner, c.subject, c.predicate)).fetchall()
                 prior = next((r for r in rows if r['id'] == c.supersedes), None)
                 exact = next((r for r in rows if (r['value'], r['polarity'], r['degree']) ==
                              (c.value, c.polarity, c.degree)), None)
                 already_corrected = exact is not None and (c.supersedes, exact['id']) in applied_corrections
+                targets = ([prior] if prior else []) if c.supersedes else rows
+                corrects_existing = already_corrected or any(correction_is_explicit(r, c, text) for r in targets)
+                score = 0.5*c.confidence + 0.35*c.stability + 0.15*c.importance
+                if c.confidence < self.policy.admission or (not corrects_existing and (
+                        c.stability < 0.7 or (score < self.policy.admission and not c.explicit_keep))):
+                    receipt['rejected'] += 1
+                    continue
                 if c.supersedes and prior is None and not already_corrected:
                     raise ValueError('correction must target an active fact of the same owner and subject')
                 if c.supersedes and not already_corrected and c.predicate == 'statement' and not statement_correction_matches(

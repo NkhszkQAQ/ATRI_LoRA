@@ -56,7 +56,7 @@ def model_candidates(proposals, current):
         # Require a whole self-report clause, not a substring of a quoted or
         # attributed claim. Subjects other than the speaker must be explicit.
         clauses = [s.strip() for s in re.split(r'[，,。！!；;\n]+', current)]
-        if evidence.rstrip('。！!；;\n ') not in clauses or re.search(r'今天|这次|暂时|临时|刚才|可能|也许|如果|说|告诉|不一定', evidence):
+        if evidence.rstrip('。！!；;\n ') not in clauses or re.search(r'今天|这次|暂时|临时|刚才|可能|也许|如果|不一定', evidence):
             continue
         subject, predicate = item.get('subject'), item.get('predicate')
         if not isinstance(predicate, str):
@@ -85,7 +85,7 @@ def model_candidates(proposals, current):
                 continue
             accepted.append(candidate)
             continue
-        if '不是' in evidence:
+        if re.search(r'不是|说|告诉', evidence):
             continue
         self_report_forms = {
             'preference': r'^(?:我(?:最喜欢|不再喜欢|不喜欢|喜欢|最爱|不爱|爱吃|爱喝|爱好|偏爱|讨厌)'
