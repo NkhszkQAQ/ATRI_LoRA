@@ -268,6 +268,36 @@ def answer_operations(operations):
     return result
 
 
+def explicit_quotation_frame(messages):
+    """Keep an explicitly announced quotation from authorizing memory writes.
+
+    This is a narrow negative guard, not a general dialogue classifier. Only
+    supplied user history can open it. A standalone explicit end closes it;
+    sentence counts and an inferred topic change cannot authorize new writes.
+    No state is inferred from assistant text or from omitted history.
+    """
+    opening = re.compile(
+        r'^(?:(?:接下来|下面|以下|随后)(?:的)?(?:[一二两三四五六七八九十0-9]+句)?'
+        r'|下[一二两三四五六七八九十0-9]+句)'
+        r'(?:是|我(?:会|要|来)?(?:读|念|引用|转述)|引用|转述|朗读)'
+        r'[^，,。！!；;：:\n？?“”「」『』\"]{0,40}'
+        r'(?:台词|对白|引文|原文|转述内容)[。！!\s]*$')
+    closing = re.compile(r'^(?:(?:引用|台词|对白|引文|转述)(?:结束|到此结束)'
+                         r'|结束(?:引用|转述)|我(?:已经)?读完了)[。！!\s]*$')
+    active = None
+    for index, message in enumerate(messages):
+        if message['role'] != 'user':
+            continue
+        text = message['content'].strip()
+        if closing.fullmatch(text):
+            active = None
+        elif index < len(messages) - 1 and opening.fullmatch(text) and not re.search(
+                r'不是|并非|而非|不要|不会|不再|假如|如果', text):
+            active = {'kind': 'quotation', 'source_message_index': index,
+                      'evidence': text, 'scope': 'explicit_user_history_until_end'}
+    return active
+
+
 class Runtime:
     def __init__(self, store: LifecycleStore, generate, *, search=None, stage='daily',
                  context_chars=7000):
@@ -285,6 +315,9 @@ class Runtime:
         current = messages[-1]['content']
         trace = {'profile': PROFILE, 'stage': self.stage, 'calls': [], 'operations': [],
                  'retrieved': [], 'selected_memories': [], 'errors': [], 'fallback': False}
+        quotation_frame = explicit_quotation_frame(messages)
+        if quotation_frame:
+            trace['memory_frame_guard'] = quotation_frame
 
         def call(kind, request):
             raw = self.generate(request, kind=kind)
@@ -326,6 +359,7 @@ class Runtime:
         delete_intent = re.match(r'^(?:请)?(?:忘记|删掉|删除|不要再记住)', current.strip())
         delete_intent = delete_intent and not re.search(r'[？?“”\"]|如果|假如|不要删|别删', current)
         delete_intent = delete_intent and proposal.get('utterance_kind') in {'self_report','other'}
+        delete_intent = delete_intent and not quotation_frame
         if delete_intent:
             targets = [resolved for i in proposal.get('forget_ids', [])[:16] if (resolved := resolve_id(i))]
             rejected_targets = [ident for ident in targets if not deletion_matches(known[ident], current)]
@@ -337,7 +371,7 @@ class Runtime:
                 trace['operations'].append({'status': 'failed', 'operation': 'delete', 'error': type(exc).__name__})
         # Syntax alone cannot resolve a quotation opened in the previous turn.
         # A malformed/uncertain analysis therefore cannot authorize auto-saving.
-        self_report = proposal.get('utterance_kind') == 'self_report'
+        self_report = proposal.get('utterance_kind') == 'self_report' and not quotation_frame
         explicit = extract_explicit(current)
         # Complete an unscored extraction only in a fresh conversation, where
         # no earlier dialogue can introduce a quotation/role-play frame. Never
@@ -377,7 +411,7 @@ class Runtime:
         # syntax check only withholds reference data; it cannot admit a fact,
         # change a score, invalidate a row, or repair the original model plan.
         unresolved = []
-        if not delete_intent and proposal.get('utterance_kind') == 'self_report':
+        if not delete_intent and not quotation_frame and proposal.get('utterance_kind') == 'self_report':
             intents = [c for c in explicit_attributes(current, rows) if c.supersedes]
             if intents:
                 active = self.store.records(owner)
