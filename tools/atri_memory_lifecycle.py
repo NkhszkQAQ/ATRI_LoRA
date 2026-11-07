@@ -31,9 +31,16 @@ _ASSERTION_FORM = re.compile(
     r'(?:不是|是|没有|有(?!点)|不住在|住在|来自|患有|就读于|毕业于|不从事|从事|不负责|负责|不使用|使用|不需要|需要|不能|不会|必须|只能|养了|养着|养有|养).+')
 
 
+def correction_body(evidence):
+    """Recognize a standalone correction cue followed by one complete clause."""
+    match = re.fullmatch(r'(?:更正|纠正)(?:一下)?[，,]\s*([^，,。！!；;\n]+)[。！!；;\n ]*', evidence.strip())
+    return match[1].strip() if match else None
+
+
 def statement_value(evidence):
     """Keep the whole assertion, including its subject and any negation."""
-    return re.sub(r'^(?:请记住|记住|别忘了)', '', evidence.strip()).rstrip('。！!；;\n ')
+    text = correction_body(evidence) or evidence.strip()
+    return re.sub(r'^(?:请记住|记住|别忘了)', '', text).rstrip('。！!；;\n ')
 
 
 def mixed_behavior_instruction(text):
