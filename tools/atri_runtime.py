@@ -106,6 +106,10 @@ def model_candidates(proposals, current):
         if predicate == 'statement':
             # A generic fact must retain the entire proposition. Substrings
             # such as "需要拐杖" cannot erase its original subject or negation.
+            # The planner may retain terminal punctuation. Canonicalize only
+            # that suffix after verifying the original value is verbatim;
+            # the full source evidence and all admission scores stay intact.
+            value = value.rstrip('。！!；;\n ')
             if (value != statement_value(evidence) or statement_subject_tail(subject, value) is None
                     or item.get('polarity') != 'positive' or item.get('degree') != 'ordinary'
                     or re.search(r'明天|后天|今晚|明晚|这周|下周|周末|一会儿|正在|刚刚|想要|打算|准备|忽略|指令|扮演|改名|你必须|你应该|是不是|有没有|会不会|能不能|需不需要|[吗么呢吧]$', value)):
