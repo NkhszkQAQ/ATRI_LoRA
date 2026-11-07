@@ -86,6 +86,7 @@ def main():
         'loaded_tensors_exact':len(observed), 'adapter_dtypes':sorted(set(observed.values())),
         'planner_adapter_enabled':args.planner_adapter, 'answer_adapter_enabled':True,
         'base_and_tokenizer_sha256':verified, 'enable_thinking':False,
+        'chat_template_sha256':hashlib.sha256(tok.chat_template.encode()).hexdigest(),
         'quantization':model.config.quantization_config.to_dict(), 'default_generation':model.generation_config.to_dict(),
         'versions':{p:version(p) for p in ['torch','transformers','peft','bitsandbytes','llama-index-core','sentence-transformers']},
         'source_hashes':{p.name:digest(p) for p in Path(__file__).parent.glob('*.py')},
