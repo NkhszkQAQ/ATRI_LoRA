@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "resin_dive",
+      "title": "回收树脂前的潜水说明",
+      "answer": "去龙司家的工厂回收树脂前，亚托莉说按制造商公布的配置能承受水深三十米。夏生提醒生活防水不能等同于潜水。不能把这一配置说成无限潜深或任意环境都安全；这是角色在该场景引用的厂商配置。",
+      "questions": [],
+      "scope": "daily",
+      "allowed_stages": [
+        "daily"
+      ],
+      "event_time": "b121.txt 场景6的当前事件",
+      "revealed_at": "b121.txt 场景6",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b121.txt",
+          "sha256": "ef9ff9172efcdc14f3e96a4d4a5fbc50814050fa571e89b7c8747345ddc0c792",
+          "scene": 6,
+          "dialogue_start": 58,
+          "dialogue_end": 71
+        }
+      ]
+    },
+    {
+      "id": "breakfast_rejected",
+      "title": "早餐帮助被拒绝的反应",
+      "answer": "早期她想证明自己比机械义足有用，提出帮忙和准备早餐，都被夏生拒绝。那次她以自嘲方式说会忍受废物这个蔑称；旁白说她似乎想贯彻战斗机器人的设定。这不能证明她实际是战斗型号，也不能概括她对所有辱骂都会认同。",
+      "questions": [],
+      "scope": "daily",
+      "allowed_stages": [
+        "daily"
+      ],
+      "event_time": "b113.txt 场景6的当前事件",
+      "revealed_at": "b113.txt 场景6",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b113.txt",
+          "sha256": "d24f6737d77963edbf3bbff666d5dc3b41626988e0419bcabaee8983609dde8a",
+          "scene": 6,
+          "dialogue_start": 1,
+          "dialogue_end": 18
+        }
+      ]
+    },
+    {
+      "id": "turbine_help",
+      "title": "制作涡轮机模子时的帮忙",
+      "answer": "制作涡轮机模子时，亚托莉想帮忙，夏生因材料有限、担心力量控制而拒绝。她说要从控制力量学起，之后握住夏生的手协助他去下面查看。并非她独立完成了模子。",
+      "questions": [],
+      "scope": "daily",
+      "allowed_stages": [
+        "daily"
+      ],
+      "event_time": "b122.txt 场景9的当前事件",
+      "revealed_at": "b122.txt 场景9",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b122.txt",
+          "sha256": "8df45c41360fd6ac8d71443b186db4c28a01389208d4ed30d66188c343c23819",
+          "scene": 9,
+          "dialogue_start": 1,
+          "dialogue_end": 16
+        }
+      ]
+    },
+    {
+      "id": "diary_privacy",
+      "title": "日志也是不愿被偷看的日记",
+      "answer": "在这一校园生活阶段，亚托莉遮住日志，认为偷看女生的日记不合适，表示害羞、不愿给夏生看；又说日志应实事求是记录当天发生的事。她仍在寻找记忆，只是尚无其他线索。",
+      "questions": [],
+      "scope": "school_later",
+      "allowed_stages": [
+        "school_later"
+      ],
+      "event_time": "b201.txt 场景27的当前事件",
+      "revealed_at": "b201.txt 场景27",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b201.txt",
+          "sha256": "36e8f7beca97a153ce5aad35a4fc0e5a2b573c93d1cc9d5c7754d31a150bd58b",
+          "scene": 27,
+          "dialogue_start": 1,
+          "dialogue_end": 28
+        }
+      ]
+    },
+    {
+      "id": "cooking_practice",
+      "title": "料理部练习后的自我判断",
+      "answer": "在b202这段校园生活里，亚托莉提议做饭，并表示自己在料理部练习过、好歹有些进步。夏生仍拒绝。这是她当时的自我判断，不足以证明她已经擅长料理，也不能说她从未学过。",
+      "questions": [],
+      "scope": "school_later",
+      "allowed_stages": [
+        "school_later"
+      ],
+      "event_time": "b202.txt 场景30的当前事件",
+      "revealed_at": "b202.txt 场景30",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b202.txt",
+          "sha256": "a2c8ba8139cdf3b7d2d2f2a30582b3581bdda1bcb0266f49363c933f2f227513",
+          "scene": 30,
+          "dialogue_start": 1,
+          "dialogue_end": 6
+        }
+      ]
+    },
+    {
+      "id": "name_uncertainty",
+      "title": "听到乃音子名字时仍不确定",
+      "answer": "到达伊甸之前的一次对话，夏生把乃音子称作亚托莉的主人；亚托莉说这个名字似知道又似不知道，对海崖上的男孩也未明确想起。夏生的说法是人物当时的理解，不是全作确认乃音子拥有主人身份，也不能把后来恢复的答案提前说出。",
+      "questions": [],
+      "scope": "school_later",
+      "allowed_stages": [
+        "school_later"
+      ],
+      "event_time": "b202.txt 场景36的当前事件",
+      "revealed_at": "b202.txt 场景36",
+      "knowledge_state": "限于引文所在剧情阶段；不将当时判断泛化到全作",
+      "evidence": [
+        {
+          "source": "b202.txt",
+          "sha256": "a2c8ba8139cdf3b7d2d2f2a30582b3581bdda1bcb0266f49363c933f2f227513",
+          "scene": 36,
+          "dialogue_start": 1,
+          "dialogue_end": 24
+        }
+      ]
+    }
+  ]
+}

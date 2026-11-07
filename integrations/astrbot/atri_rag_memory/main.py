@@ -18,7 +18,13 @@ class Main(star.Star):
         settings = json.loads(Path(__file__).with_name("settings.json").read_text())
         config = json.loads(Path(settings["config_path"]).read_text())
         self.secret = read_secret(config["shared_secret_file"])
-        self.store = MemoryStore(config["memory_db"])
+        self.lifecycle = None
+        if config.get('runtime_profile') == 'memory-rag-v1.2-dev':
+            from .atri_memory_lifecycle import LifecycleStore
+            self.lifecycle = LifecycleStore(config['lifecycle_db'])
+            self.store = None
+        else:
+            self.store = MemoryStore(config["memory_db"])
 
     @filter.command("memory")
     async def memory(self, event: AstrMessageEvent, rest: GreedyStr):
@@ -30,8 +36,22 @@ class Main(star.Star):
             try:
                 owner = identity(event)
                 command = "/memory" + (" " + rest.strip() if rest.strip() else "")
-                raw = await asyncio.to_thread(self.store.command, owner, command)
-                reply = command_reply(command, raw)
+                if self.lifecycle is not None:
+                    if rest.strip() in {'', 'list'}:
+                        rows = await asyncio.to_thread(self.lifecycle.records, owner)
+                        reply = '\n'.join(r['id']+'：'+r['evidence'] for r in rows) or '尚无长期记忆。'
+                    elif rest.strip().startswith('del '):
+                        event_id = str(getattr(getattr(event,'message_obj',None),'message_id','') or '')
+                        if not event_id:
+                            raise ValueError('缺少当前消息 ID')
+                        result = await asyncio.to_thread(self.lifecycle.forget_event,owner,
+                            'qq-command:'+event_id,command,[rest.strip()[4:].strip()])
+                        reply = '已删除。' if result['status']=='deleted' else '这条删除请求已经处理过。'
+                    else:
+                        reply = '用 /memory list 查看，/memory del 记录ID 删除；保存或更正可以直接在对话中说明。'
+                else:
+                    raw = await asyncio.to_thread(self.store.command, owner, command)
+                    reply = command_reply(command, raw)
             except ValueError as exc:
                 reply = "未保存：" + str(exc)
         yield event.plain_result(reply)
@@ -43,5 +63,8 @@ class Main(star.Star):
             return
         owner = identity(event)
         private = event.is_private_chat()
-        rows = await asyncio.to_thread(self.store.list, owner) if private else []
+        rows = await asyncio.to_thread(self.store.list, owner) if private and self.store is not None else []
         req.system_prompt = attach_context(req.system_prompt, owner, rows, private, self.secret)
+        if self.lifecycle is not None:
+            from .atri_qq_v12 import attach_event
+            req.system_prompt = attach_event(req.system_prompt,event,req.prompt,self.secret)

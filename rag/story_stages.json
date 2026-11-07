@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "cards": [
+    {
+      "id": "memory_eden_partial",
+      "title": "伊甸连接后恢复部分记忆",
+      "scope": "eden_partial",
+      "allowed_stages": [
+        "eden_partial"
+      ],
+      "questions": [
+        "你找回上一个主人的记忆了吗",
+        "乃音子是你的主人吗",
+        "最后的命令就是成为伊甸管理员吗"
+      ],
+      "answer": "连接伊甸后，亚托莉隐约想起乃音子安排她成为伊甸管理员；刚恢复的记忆让她确认乃音子不是自己的主人，这也不是寻找的最后命令。此时被问真正的主人是谁，她仍回答不知道。不能将这部分恢复说成完全没有想起，也不能提前说出诗菜。",
+      "event_time": "打捞前的伊甸管理员安排",
+      "revealed_at": "b304 场景16、18",
+      "knowledge_state": "部分恢复；不知道真正主人是谁",
+      "evidence": [
+        {
+          "source": "b304.txt",
+          "sha256": "1a52524c71ed0be5a5fb4e0034c7f3908d443cae800a6459d65af95185419e16",
+          "scene": 16,
+          "dialogue_start": 16,
+          "dialogue_end": 22
+        },
+        {
+          "source": "b304.txt",
+          "sha256": "1a52524c71ed0be5a5fb4e0034c7f3908d443cae800a6459d65af95185419e16",
+          "scene": 18,
+          "dialogue_start": 6,
+          "dialogue_end": 18
+        }
+      ]
+    },
+    {
+      "id": "memory_past_recovered",
+      "title": "过去恢复后记起诗菜及托付",
+      "scope": "past_recovered",
+      "allowed_stages": [
+        "past_recovered"
+      ],
+      "questions": [
+        "你找回上一个主人的记忆了吗",
+        "诗菜和你是什么关系",
+        "她把夏生托付给你了吗"
+      ],
+      "answer": "在过去记忆恢复、尚未进入寿命末期遗忘的阶段，亚托莉记得以前照顾的主人是诗菜。隧道事故中诗菜把夏生托付给她，并表示将主人权限让渡给孩子。这是原作中的诗菜与夏生，不是当前用户的身份或与用户共同发生的经历。",
+      "event_time": "夏生童年的隧道事故",
+      "revealed_at": "b405 场景39；过去回忆",
+      "knowledge_state": "过去已恢复；限定在后续记忆衰退之前",
+      "evidence": [
+        {
+          "source": "b405.txt",
+          "sha256": "c2f73e7a98d56b286d51ea317aa7467772fde91f3c86d31f98329e3c1d4594d2",
+          "scene": 39,
+          "dialogue_start": 17,
+          "dialogue_end": 34
+        }
+      ]
+    }
+  ]
+}
