@@ -552,14 +552,18 @@ class LifecycleStore:
             count = self._delete_families(db, owner, targets)
         return {'status': 'deleted', 'count': count}
 
-    def rank(self, owner, relevance, *, now=None):
+    def rank(self, owner, relevance, *, now=None, excluded_ids=()):
         """Relevance is a callable over this owner's active records only.
 
         Semantic scoring can reuse a local embedding/reranker. Reject nonfinite
         scores; low relevance cannot be rescued by importance or recency.
         Retrieval never counts as user confirmation or changes retention.
         """
-        records = self.records(owner)
+        # A current explicit correction can conflict with an old record even
+        # when persistence has not succeeded. Exclusion is request-local and
+        # precedes the count/character budget; it never changes stored facts.
+        excluded = set(excluded_ids)
+        records = [row for row in self.records(owner) if row['id'] not in excluded]
         scores = list(relevance(records)) if records else []
         if len(scores) != len(records):
             raise ValueError('relevance result length mismatch')

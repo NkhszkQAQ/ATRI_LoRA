@@ -372,6 +372,29 @@ class Runtime:
             except sqlite3.Error as exc:
                 trace['operations'].append({'status': 'failed', 'operation': 'save', 'error': type(exc).__name__})
 
+        # A complete current correction outranks a conflicting old reference,
+        # even if an incomplete model candidate could not be persisted. This
+        # syntax check only withholds reference data; it cannot admit a fact,
+        # change a score, invalidate a row, or repair the original model plan.
+        unresolved = []
+        if not delete_intent and proposal.get('utterance_kind') == 'self_report':
+            intents = [c for c in explicit_attributes(current, rows) if c.supersedes]
+            if intents:
+                active = self.store.records(owner)
+                active_ids = {r['id'] for r in active}
+                for c in intents:
+                    if c.supersedes in active_ids:
+                        unresolved.append({'old_id': c.supersedes, 'subject': c.subject,
+                            'value': c.value, 'evidence': c.evidence,
+                            'new_value_persisted': any(r['subject'] == c.subject
+                                and r['predicate'] == c.predicate and r['value'] == c.value
+                                and r['polarity'] == c.polarity and r['degree'] == c.degree
+                                for r in active)})
+        if unresolved:
+            trace['unresolved_corrections'] = unresolved
+            trace['operations'].append({'status': 'unavailable', 'operation': 'correct',
+                'reason': 'previous_fact_still_active', 'unresolved_count': len(unresolved)})
+
         related = {}
         for item in proposal.get('memory_scores', [])[:128]:
             if not isinstance(item, dict):
@@ -379,7 +402,8 @@ class Runtime:
             ident, score = resolve_id(item.get('id')), item.get('relevance')
             if isinstance(ident, str) and ident in known and type(score) in (int, float) and math.isfinite(score) and 0 <= score <= 1:
                 related[ident] = score
-        selected = self.store.rank(owner, lambda records: [related.get(r['id'], 0) for r in records])
+        selected = self.store.rank(owner, lambda records: [related.get(r['id'], 0) for r in records],
+                                   excluded_ids=[item['old_id'] for item in unresolved])
         trace['selected_memories'] = selected
         hits_by_id = {}
         # Always retrieve against the actual utterance. Planner omissions must
@@ -417,6 +441,9 @@ class Runtime:
         trace['retrieved'] = hits
         memory_data = [{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree', 'evidence', 'source_id')} for r in selected]
         context = {'story_stage': self.stage, 'operations': answer_operations(trace['operations']), 'memory': memory_data, 'references': []}
+        if unresolved:
+            context['unresolved_corrections'] = [
+                {k: v for k, v in item.items() if k != 'old_id'} for item in unresolved]
         for hit in hits:
             trial = {**context, 'references': context['references'] + [hit]}
             if len(json.dumps(trial, ensure_ascii=False)) <= self.context_chars:
