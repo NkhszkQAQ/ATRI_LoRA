@@ -46,6 +46,19 @@ def test_empty_plan_is_legal_without_forcing_a_save_or_query():
     assert accepted(item)
 
 
+def test_statement_shape_is_supported_and_runtime_enforces_numeric_bounds():
+    from atri_runtime import model_candidates
+    item = plan()
+    item['candidates'] = [dict(subject='user', predicate='statement', value='我长期需要拐杖',
+        evidence='我长期需要拐杖', polarity='positive', degree='ordinary', importance=.9, stability=1)]
+    assert accepted(item)
+    item['candidates'][0]['importance'] = 1.2
+    # The pinned format parser does not enforce numeric minimum/maximum.
+    # Runtime admission must reject the value regardless of token filtering.
+    assert model_candidates(item['candidates'], '我长期需要拐杖') == []
+    assert accepted(plan())
+
+
 def test_schema_is_not_a_semantic_or_authorization_check():
     # Well-formed but false/foreign evidence must still pass through Runtime's
     # existing evidence and ownership checks, never directly into persistence.

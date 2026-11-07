@@ -90,6 +90,71 @@ def test_multiple_likes_survive_name_correction(tmp_path):
     assert {r['value'] for r in store.records('alice')} == {'画画', '散步', '小雨'}
 
 
+@pytest.mark.parametrize('select_old,use_event', [(False, True), (True, True), (False, False)])
+def test_forget_clears_cross_value_correction_history_and_preserves_scope(select_old, use_event, tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    first = store.observe('alice', 'one', '我喜欢红色')['saved'][0]
+    store.observe('alice', 'unrelated', '我喜欢画画，我的朋友喜欢红色')
+    store.observe('bob', 'one', '我喜欢红色')
+    second = store.observe('alice', 'two', '我把喜欢的颜色改成蓝色', [
+        Candidate('user', 'preference', '蓝色', '我把喜欢的颜色改成蓝色', supersedes=first)])['saved'][0]
+    third = store.observe('alice', 'three', '我把喜欢的颜色改成绿色', [
+        Candidate('user', 'preference', '绿色', '我把喜欢的颜色改成绿色', supersedes=second)])['saved'][0]
+    if use_event:
+        result = store.forget_event('alice', 'forget', '忘记颜色', [first if select_old else third])
+    else:
+        result = store.forget('alice', subject='user', predicate='preference', value='绿色')
+    assert result['count'] == 3
+    assert {(r['subject'], r['value']) for r in store.records('alice', active_only=False)} == {
+        ('user', '画画'), ('related:我的朋友', '红色')}
+    assert store.records('bob')[0]['value'] == '红色'
+    assert store.observe('alice', 'one', '我喜欢红色')['status'] == 'duplicate'
+    assert all(r['subject'] != 'user' or r['value'] != '红色' for r in store.records('alice', active_only=False))
+
+
+def test_deletion_family_handles_overlapping_targets_and_cycles_once(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    first = store.observe('alice', 'one', '我叫小林')['saved'][0]
+    second = store.observe('alice', 'two', '我叫小雨')['saved'][0]
+    # Corrupt historical links must not cause an infinite traversal or escape
+    # the owner boundary; real correction insertion creates only older links.
+    other = store.observe('bob', 'one', '我叫小林')['saved'][0]
+    with store.connect() as db:
+        db.execute('UPDATE facts SET supersedes=? WHERE id=?', (second, first))
+        db.execute('UPDATE facts SET supersedes=? WHERE id=?', (first, other))
+    assert store.forget_event('alice', 'delete', '忘记名字', [first, second])['count'] == 2
+    assert not store.records('alice', active_only=False)
+    assert store.records('bob')[0]['id'] == other
+
+
+def test_correction_to_existing_fact_preserves_both_histories_for_deletion(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    red = store.observe('alice', 'one', '我喜欢红色')['saved'][0]
+    blue = store.observe('alice', 'two', '我喜欢蓝色')['saved'][0]
+    green = store.observe('alice', 'three', '我把喜欢的颜色改成绿色', [
+        Candidate('user', 'preference', '绿色', '我把喜欢的颜色改成绿色', supersedes=blue)])['saved'][0]
+    store.observe('alice', 'four', '我把喜欢的颜色改成绿色', [
+        Candidate('user', 'preference', '绿色', '我把喜欢的颜色改成绿色', supersedes=red)])
+    store = LifecycleStore(tmp_path/'facts.db')
+    assert store.forget_event('alice', 'delete', '忘记颜色', [green])['count'] == 3
+    assert not store.records('alice', active_only=False)
+    with store.connect() as db:
+        assert db.execute('SELECT COUNT(*) FROM fact_corrections').fetchone()[0] == 0
+
+
+def test_existing_lifecycle_database_gains_links_without_rewriting_old_rows(tmp_path):
+    path = tmp_path/'facts.db'
+    store = LifecycleStore(path)
+    store.observe('alice', 'one', '我叫小林')
+    store.observe('alice', 'two', '我叫小雨')
+    before = store.records('alice', active_only=False)
+    with store.connect() as db:
+        db.execute('DROP TABLE fact_corrections')  # Simulate pre-extension schema.
+    store = LifecycleStore(path)
+    assert store.records('alice', active_only=False) == before
+    assert store.forget('alice', value='小雨')['count'] == 2  # Legacy links still work.
+
+
 def test_explicit_correction_is_scoped_and_keeps_other_preferences(tmp_path):
     store = LifecycleStore(tmp_path / 'facts.db')
     store.observe('alice', '1', '我喜欢红色，我喜欢画画')
