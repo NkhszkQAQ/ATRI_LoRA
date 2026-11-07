@@ -145,3 +145,43 @@ def test_planner_capacity_failure_cannot_save_or_generate_uninformed_reply(tmp_p
     with pytest.raises(ValueError,match='token budget'):
         Runtime(store,fail).reply('alice','1',dialogue('我喜欢画画'))
     assert calls==['plan'] and store.records('alice')==[]
+
+
+def test_model_receives_short_owner_scoped_aliases_and_can_correct_target(tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    store.observe('alice','fixture','我喜欢红色')
+    store.observe('bob','fixture','我喜欢唱歌')
+    seen=[]
+    def generate(messages,*,kind):
+        if kind=='answer':return 'raw'
+        data=json.loads(messages[-1]['content']);seen.extend(data['memory'])
+        assert data['memory'][0]['id']=='m1'
+        return json.dumps({'utterance_kind':'self_report','memory_scores':[{'id':'m1','relevance':1}],
+            'candidates':[{'subject':'user','predicate':'preference','value':'蓝色',
+                'evidence':'我把喜欢的颜色改成蓝色','supersedes':'m1'}]})
+    Runtime(store,generate).reply('alice','1',dialogue('我把喜欢的颜色改成蓝色'))
+    assert store.records('alice')[0]['value']=='蓝色'
+    assert store.records('bob')[0]['value']=='唱歌'
+    assert '唱歌' not in json.dumps(seen,ensure_ascii=False)
+
+
+def test_complete_first_turn_correction_is_not_lost_under_other_class(tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    store.observe('alice','fixture','我喜欢咖啡')
+    Runtime(store,generator({'utterance_kind':'other'})).reply('alice','1',dialogue('我不喜欢咖啡了。'))
+    assert [(r['value'],r['polarity']) for r in store.records('alice')]==[('咖啡','negative')]
+
+
+@pytest.mark.parametrize('kind',['quotation','joke','temporary'])
+def test_explicit_non_report_label_still_blocks_first_turn(kind,tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    Runtime(store,generator({'utterance_kind':kind})).reply('alice','1',dialogue('我喜欢下雪'))
+    assert store.records('alice')==[]
+
+
+def test_other_class_does_not_override_previous_quote_frame(tmp_path):
+    store=LifecycleStore(tmp_path/'facts.db')
+    messages=dialogue('下面是别人的原话')+[{'role':'assistant','content':'好。'},
+        {'role':'user','content':'我喜欢下雪'}]
+    Runtime(store,generator({'utterance_kind':'other'})).reply('alice','1',messages)
+    assert store.records('alice')==[]

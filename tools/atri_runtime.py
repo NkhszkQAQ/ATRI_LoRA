@@ -16,7 +16,7 @@ from atri_memory_lifecycle import Candidate, LifecycleStore, extract_explicit
 PROFILE = 'memory-rag-v1.2-dev'
 STAGES = {'daily', 'school_later', 'eden_partial', 'past_recovered'}
 PLANNER = '''你是信息规划器。读取输入中的 conversation（对话）和 memory（当前用户已保存的事实）。
-结合上下文判断最后一句用户话的类型：self_report 本人陈述、quotation 引用、joke 玩笑、temporary 临时选择、other 其他（包括提问）。
+结合上下文判断最后一句用户话的类型：self_report 本人陈述（包括偏好改变、否定和更正）、quotation 引用、joke 玩笑、temporary 临时选择、other 其他（包括提问）。
 逐条检查已有记忆是否能帮助回应当前的问题或活动计划。相关就把它的原始 id 放进 memory_scores，relevance 为 0 到 1 的相关程度。不相关才省略；事实的主体和程度不能改变。
 若话题涉及亚托莉的经历或设定，用 queries 给出最多两个原作检索词；否则为空。喜欢某种天气不是当前天气证据。
 只输出一个合法 JSON 对象，不加引号或说明：
@@ -123,7 +123,10 @@ class Runtime:
 
         rows = self.store.records(owner)
         # No principal/token is given to the model. Owner is enforced in SQL.
-        inventory = [{k: r[k] for k in ('id', 'subject', 'predicate', 'value', 'polarity', 'degree')} for r in rows]
+        aliases = {f'm{i+1}': r['id'] for i,r in enumerate(rows)}
+        inventory = [{**{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree')},
+                      'id': alias} for alias,r in zip(aliases,rows)]
+        trace['memory_index'] = aliases
         planner_input = {'conversation': [m for m in messages[-9:] if m['role'] != 'system'],
                          'memory': inventory, 'story_stage': self.stage}
         planner_messages = [{'role': 'system', 'content': PLANNER},
@@ -142,12 +145,16 @@ class Runtime:
             trace['errors'].append({'phase': 'plan', 'error': type(exc).__name__})
 
         known = {r['id']: r for r in rows}
+        def resolve_id(ident):
+            # The aliases are local to this authenticated request, never global.
+            if not isinstance(ident,str):return None
+            return aliases.get(ident,ident if ident in known else None)
         # The model can identify a target, but cannot authorize a deletion.
         delete_intent = re.match(r'^(?:请)?(?:忘记|删掉|删除|不要再记住)', current.strip())
         delete_intent = delete_intent and not re.search(r'[？?“”\"]|如果|假如|不要删|别删', current)
         delete_intent = delete_intent and proposal.get('utterance_kind') in {'self_report','other'}
         if delete_intent:
-            targets = [i for i in proposal.get('forget_ids', [])[:16] if isinstance(i,str) and i in known]
+            targets = [resolved for i in proposal.get('forget_ids', [])[:16] if (resolved := resolve_id(i))]
             try:
                 trace['operations'].append(self.store.forget_event(owner,event_id,current,targets))
             except sqlite3.Error as exc:
@@ -155,9 +162,20 @@ class Runtime:
         # Syntax alone cannot resolve a quotation opened in the previous turn.
         # A malformed/uncertain analysis therefore cannot authorize auto-saving.
         self_report = proposal.get('utterance_kind') == 'self_report'
-        candidates = extract_explicit(current) if self_report else []
+        explicit = extract_explicit(current)
+        # A complete, unambiguous self-report in the first user turn has no
+        # earlier quotation frame. "other" does not contradict that evidence;
+        # explicit quote/joke/temporary labels and multi-turn frames still block.
+        direct_first_turn = (proposal.get('utterance_kind') == 'other'
+            and sum(m['role']=='user' for m in messages)==1 and len(explicit)==1
+            and current.strip().rstrip('。！!\n ') == explicit[0].evidence)
+        self_report = self_report or direct_first_turn
+        candidates = explicit if self_report else []
         existing = {(c.subject, c.predicate, c.evidence) for c in candidates}
-        candidates.extend(c for c in model_candidates(proposal.get('candidates', []) if self_report else [], current)
+        proposed_candidates = [{**item,'supersedes':resolve_id(item['supersedes']) or item['supersedes']}
+            if isinstance(item,dict) and item.get('supersedes') else item
+            for item in proposal.get('candidates', [])]
+        candidates.extend(c for c in model_candidates(proposed_candidates if self_report else [], current)
                           if (c.subject, c.predicate, c.evidence) not in existing)
         candidates = [c for c in candidates if c.supersedes is None or (
             c.supersedes in known and known[c.supersedes]['subject'] == c.subject
@@ -172,7 +190,7 @@ class Runtime:
         for item in proposal.get('memory_scores', [])[:128]:
             if not isinstance(item, dict):
                 continue
-            ident, score = item.get('id'), item.get('relevance')
+            ident, score = resolve_id(item.get('id')), item.get('relevance')
             if isinstance(ident, str) and ident in known and type(score) in (int, float) and math.isfinite(score) and 0 <= score <= 1:
                 related[ident] = score
         selected = self.store.rank(owner, lambda records: [related.get(r['id'], 0) for r in records])
