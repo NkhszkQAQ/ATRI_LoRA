@@ -1,13 +1,45 @@
 import concurrent.futures
+import json
+import os
 from dataclasses import replace
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from atri_memory_lifecycle import Candidate, LifecycleStore, Policy, extract_explicit
+
+
+def test_separate_process_restart_preserves_correction_and_delete_tombstone(tmp_path):
+    database = tmp_path/'restart.db'
+    def run(body):
+        script = ('import json, os, sys\nfrom atri_memory_lifecycle import LifecycleStore\n'
+                  'store=LifecycleStore(sys.argv[1])\n' + body)
+        result = subprocess.run([sys.executable, '-c', script, str(database)], check=True,
+            text=True, capture_output=True, env={**os.environ,
+            'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'tools')})
+        return json.loads(result.stdout)
+    first = run("store.observe('alice','save','我喜欢咖啡')\n"
+                "store.observe('bob','save','我喜欢咖啡')\n"
+                "print(json.dumps({'pid':os.getpid(),'rows':store.records('alice')}))")
+    corrected = run("assert store.records('alice')[0]['polarity']=='positive'\n"
+                    "store.observe('alice','correction','我不喜欢咖啡')\n"
+                    "print(json.dumps({'pid':os.getpid(),'rows':store.records('alice')}))")
+    deleted = run("rows=store.records('alice')\n"
+                  "assert len(rows)==1 and rows[0]['polarity']=='negative'\n"
+                  "store.forget_event('alice','forget','忘记咖啡',[rows[0]['id']])\n"
+                  "print(json.dumps({'pid':os.getpid(),'rows':store.records('alice',active_only=False)}))")
+    restarted = run("assert store.observe('alice','save','我喜欢咖啡')['status']=='duplicate'\n"
+                    "assert store.observe('alice','correction','我不喜欢咖啡')['status']=='duplicate'\n"
+                    "print(json.dumps({'pid':os.getpid(),'alice':store.records('alice',active_only=False),'bob':store.records('bob')}))")
+    assert len({r['pid'] for r in [first,corrected,deleted,restarted]}) == 4
+    assert first['rows'][0]['polarity'] == 'positive'
+    assert corrected['rows'][0]['supersedes'] == first['rows'][0]['id']
+    assert deleted['rows'] == restarted['alice'] == []
+    assert restarted['bob'][0]['polarity'] == 'positive'
 
 
 @pytest.mark.parametrize('text', [

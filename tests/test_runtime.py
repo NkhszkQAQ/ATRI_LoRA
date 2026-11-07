@@ -230,3 +230,43 @@ def test_canonical_search_uses_current_and_user_context_when_planner_omits_queri
     _,trace=Runtime(store,generator({'queries':[]}),search=search).reply('alice','new',messages)
     assert calls==['那我们一起去上课吧','你平时想学些什么？\n那我们一起去上课吧']
     assert trace['retrieved']==[] and trace['retrieval_queries']==calls
+
+
+def test_later_query_strong_hit_precedes_weak_hits_when_context_is_full(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    def hit(ident, score, query):
+        return {'node_id': ident, 'score': score, 'retrieval_query': query,
+                'text': ident + '资料内容。'*70,
+                'metadata': {'allowed_stages': ['daily']}}
+    def search(query, history):
+        if query == '当前话题':
+            return [hit('weak', .51, query), hit('shared', .55, query)]
+        return [hit('strong', .98, query), hit('shared', .92, query),
+                {**hit('future', 1, query), 'metadata': {'allowed_stages': ['past_recovered']}}]
+    _, trace = Runtime(store, generator({'queries': ['相关话题']}), search=search,
+                       context_chars=800).reply('alice','new',dialogue('当前话题'))
+    assert [h['node_id'] for h in trace['retrieved']] == ['strong','shared','weak']
+    assert trace['retrieved'][1]['retrieval_query'] == '相关话题'
+    payload = trace['calls'][-1]['messages'][-1]['content'].split('\n',1)[1].split('\n\n用户说：\n')[0]
+    assert [h['node_id'] for h in json.loads(payload)['references']] == ['strong']
+
+
+@pytest.mark.parametrize('text', ['我的室友喜欢橙汁', '我哥哥喜欢橙汁', '我的同事喜欢橙汁'])
+def test_unlisted_relationship_cannot_be_admitted_as_the_users_preference(text, tmp_path):
+    item = dict(subject='user', predicate='preference', value='橙汁', evidence=text,
+                polarity='positive', degree='ordinary')
+    store = LifecycleStore(tmp_path/'facts.db')
+    Runtime(store, generator({'candidates':[item]})).reply('alice','one',dialogue(text))
+    assert store.records('alice') == []
+    assert model_candidates([{**item,'subject':'related:'+text.split('喜欢')[0]}],text)
+
+
+@pytest.mark.parametrize('text,predicate,value', [
+    ('我的爱好是爬山','preference','爬山'),
+    ('叫我阿圆','name','阿圆'),
+    ('请记住我对花粉过敏','allergy','花粉'),
+])
+def test_positive_speaker_forms_preserve_owned_attributes(text,predicate,value):
+    item = dict(subject='user',predicate=predicate,value=value,evidence=text,
+                polarity='positive',degree='ordinary')
+    assert len(model_candidates([item],text)) == 1

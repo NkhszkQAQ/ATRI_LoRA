@@ -56,17 +56,26 @@ def model_candidates(proposals, current):
         clauses = [s.strip() for s in re.split(r'[，,。！!；;\n]+', current)]
         if evidence.rstrip('。！!；;\n ') not in clauses or re.search(r'今天|这次|暂时|临时|刚才|可能|也许|如果|说|告诉|不是|不一定', evidence):
             continue
-        subject = item.get('subject')
+        subject, predicate = item.get('subject'), item.get('predicate')
+        self_report_forms = {
+            'preference': r'^(?:我(?:最喜欢|不再喜欢|不喜欢|喜欢|最爱|不爱|爱吃|爱喝|爱好|偏爱|讨厌)'
+                          r'|我的(?:喜好|偏好|爱好|兴趣|口味)(?:是|为|改)'
+                          r'|我把(?:自己)?(?:最喜欢|喜欢|不喜欢))',
+            'name': r'^(?:我叫|我的名字(?:是|叫|改)|叫我)',
+            'allergy': r'^我对',
+        }
+        if predicate not in self_report_forms:
+            continue
         if subject == 'user':
-            if not re.match(r'^(?:请记住|记住|别忘了)?我(?!的(?:朋友|妈妈|爸爸|姐姐|哥哥|同学))', evidence):
+            # Accept explicit speaker grammar, rather than trying to enumerate
+            # every possible relative/colleague after "我" or "我的".
+            statement = re.sub(r'^(?:请记住|记住|别忘了)', '', evidence)
+            if not re.match(self_report_forms[predicate], statement):
                 continue
         elif isinstance(subject, str) and subject.startswith('related:'):
             if not evidence.startswith(subject[len('related:'):]):
                 continue
         else:
-            continue
-        predicate = item.get('predicate')
-        if predicate not in {'preference', 'name', 'allergy'}:
             continue
         negative = bool(re.search(r'不喜欢|不爱|讨厌|不再喜欢|不过敏|不再过敏', evidence))
         if item.get('polarity', 'positive') != ('negative' if negative else 'positive'):
@@ -195,7 +204,7 @@ class Runtime:
                 related[ident] = score
         selected = self.store.rank(owner, lambda records: [related.get(r['id'], 0) for r in records])
         trace['selected_memories'] = selected
-        hits, seen = [], set()
+        hits_by_id = {}
         # Always retrieve against the actual utterance. Planner omissions must
         # not suppress relevant canonical knowledge in an ordinary invitation.
         # Generated queries supplement this; the reranker decides relevance.
@@ -215,10 +224,19 @@ class Runtime:
                 if self.stage not in meta.get('allowed_stages', []):
                     continue
                 ident = hit.get('node_id')
-                if not isinstance(ident, str) or ident in seen:
+                if not isinstance(ident, str):
                     continue
-                seen.add(ident)
-                hits.append(hit)
+                score = hit.get('score', 0)
+                if type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 1:
+                    raise ValueError('invalid canonical relevance score')
+                # Several queries can return the same card. Preserve its best
+                # scored evidence, not whichever query happened to run first.
+                previous = hits_by_id.get(ident)
+                if previous is None or score > previous.get('score', 0):
+                    hits_by_id[ident] = hit
+        # Budget is applied below, after the union is ranked. Otherwise weaker
+        # early-query hits can crowd out a strong later-query result.
+        hits = sorted(hits_by_id.values(), key=lambda hit: -hit.get('score', 0))
         trace['retrieved'] = hits
         memory_data = [{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree', 'evidence', 'source_id')} for r in selected]
         context = {'story_stage': self.stage, 'operations': trace['operations'], 'memory': memory_data, 'references': []}
