@@ -273,10 +273,15 @@ def correction_is_explicit(old, candidate, source):
                  r'(?:不要|别)(?:更正|纠正|修改|改)', source):
         return False
     clause = candidate.evidence.strip().rstrip('。！!；;\n ')
+    body = correction_body(candidate.evidence)
+    if body is not None:
+        if candidate.predicate != 'statement' or candidate.evidence.strip() != source.strip():
+            return False
+        clause = body
     if clause not in [s.strip() for s in re.split(r'[，,。！!；;\n]+', source)]:
         return False
     prefix = source[:source.index(candidate.evidence)].strip()
-    preceding_cue = re.fullmatch(r'(?:请)?(?:更正|纠正)(?:一下)?[，,:：\s]*', prefix)
+    preceding_cue = body is not None or re.fullmatch(r'(?:请)?(?:更正|纠正)(?:一下)?[，,:：\s]*', prefix)
     if prefix and not preceding_cue:
         return False
     if candidate.predicate == 'statement':

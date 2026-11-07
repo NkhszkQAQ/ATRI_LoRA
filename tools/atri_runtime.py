@@ -216,6 +216,42 @@ def deletion_matches(record, current):
     return False
 
 
+def explicit_attributes(current, records):
+    """Propose a complete named attribute without asking a model to copy it.
+
+    This narrow syntax path does not classify the surrounding dialogue frame.
+    Runtime still gates it with the same quotation/joke/temporary safeguards as
+    other explicit candidates. Unknown subjects and compound clauses abstain.
+    """
+    evidence = current.strip()
+    value = statement_value(evidence)
+    attribute = '(?:' + '|'.join(STATEMENT_ATTRIBUTES) + ')'
+    if not re.fullmatch(r'我的' + attribute + r'(?:不是|是|为|不在|在|改成|改为)'
+                        r'[^，,。！!；;：:\n]+', value):
+        return []
+    if re.search(r'也许|可能|大概|似乎|应该|不一定|据说|听说|好像|'
+                 r'如果|假如|暂时|临时|这次|今天|明天|后天|今晚|明晚|'
+                 r'这周|下周|本周|今年|明年|刚才|正在|打算|准备|想要|'
+                 r'而是|但是|不过|并且', value):
+        return []
+    proposals = [{'subject': 'user', 'predicate': 'statement', 'value': value,
+                  'evidence': evidence,
+                  'polarity': 'positive', 'degree': 'ordinary',
+                  'importance': 0.7, 'stability': 1.0}]
+    correction = correction_body(evidence) is not None or re.match(
+        r'^我的' + attribute + r'(?:改成|改为)', value)
+    if correction:
+        topic = statement_topic('user', value)
+        matches = [row for row in records if row['subject'] == 'user'
+                   and row['predicate'] == 'statement'
+                   and statement_topic('user', row['value']) == topic]
+        if len(matches) > 1:
+            return []
+        if len(matches) == 1 and matches[0]['value'] != value:
+            proposals[0]['supersedes'] = matches[0]['id']
+    return model_candidates(proposals, current)
+
+
 def answer_operations(operations):
     """Keep execution outcomes, without random persistence IDs in model input."""
     result = []
@@ -299,12 +335,20 @@ class Runtime:
         # A malformed/uncertain analysis therefore cannot authorize auto-saving.
         self_report = proposal.get('utterance_kind') == 'self_report'
         explicit = extract_explicit(current)
+        # Complete an unscored extraction only in a fresh conversation, where
+        # no earlier dialogue can introduce a quotation/role-play frame. Never
+        # override explicit admission scores or a proposed correction target.
+        unscored = all(isinstance(item, dict)
+                       and not any(k in item for k in ('importance', 'stability', 'confidence'))
+                       and item.get('supersedes') is None for item in proposal.get('candidates', []))
+        if unscored and not any(m['role'] != 'system' for m in messages[:-1]):
+            explicit += explicit_attributes(current, rows)
         # A complete, unambiguous self-report in the first user turn has no
         # earlier quotation frame. "other" does not contradict that evidence;
         # explicit quote/joke/temporary labels and multi-turn frames still block.
         direct_first_turn = (proposal.get('utterance_kind') == 'other'
             and sum(m['role']=='user' for m in messages)==1 and len(explicit)==1
-            and current.strip().rstrip('。！!\n ') == explicit[0].evidence)
+            and current.strip().rstrip('。！!\n ') == explicit[0].evidence.rstrip('。！!\n '))
         self_report = self_report or direct_first_turn
         candidates = explicit if self_report else []
         existing = {(c.subject, c.predicate, c.evidence) for c in candidates}
