@@ -49,12 +49,16 @@ def load():
     print(f"[init] ready in {time.time() - t0:.1f}s", flush=True)
 
 
+def render_system_prompt(text: str) -> str:
+    """Render the standalone persona; lifecycle facts are injected per owner."""
+    return text.strip().replace("{{user}}", "主人").replace("{{honorific}}", "").replace(
+        "{{memory}}", "（长期记忆由服务按当前用户单独注入；未提供的信息不能编造）")
+
+
 def default_system() -> str:
     if os.path.exists(SYSTEM_FILE):
         with open(SYSTEM_FILE, encoding="utf-8") as source:
-            text = source.read().strip()
-        return text.replace("{{user}}", "主人").replace("{{honorific}}", "").replace(
-            "{{memory}}", "（长期记忆由服务按当前用户单独注入；未提供的信息不能编造）")
+            return render_system_prompt(source.read())
     return ""
 
 

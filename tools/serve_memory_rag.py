@@ -30,7 +30,10 @@ def build_app(store, users, generator_factory, *, system, identity, search=None,
               stage='daily', trace_dir=None, principal_resolver=None):
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import StreamingResponse
+    from serve_v1_1_8b import render_system_prompt
 
+    system = render_system_prompt(system)
+    identity = {**identity, 'system_prompt_sha256': hashlib.sha256(system.encode()).hexdigest()}
     app = FastAPI()
     auth = MemoryService(None, users) if principal_resolver is None else None
     # The model and request pipeline are serialized together, including planning,
