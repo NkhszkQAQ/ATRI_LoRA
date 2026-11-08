@@ -80,11 +80,11 @@ def resolve_event(body, secret, *, context_window=None, now=None):
         raise HTTPException(401,'valid signed private QQ event required') from exc
 
 
-def build_qq_app(store, secret, generator_factory, *, system, identity, search=None,
+def build_qq_app(store, secret, generator_factory, *, system, identity, search=None, search_current=None,
                  stage='daily', trace_dir=None, context_window=None):
     from serve_memory_rag import build_app
     if not isinstance(secret,bytes) or len(secret)<32:
         raise ValueError('bridge secret must be at least 32 bytes')
     return build_app(store, {}, generator_factory, system=system, identity=identity, search=search,
-                     stage=stage, trace_dir=trace_dir,
+                     search_current=search_current, stage=stage, trace_dir=trace_dir,
                      principal_resolver=lambda body: resolve_event(body,secret,context_window=context_window))

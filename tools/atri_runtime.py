@@ -299,11 +299,12 @@ def explicit_quotation_frame(messages):
 
 
 class Runtime:
-    def __init__(self, store: LifecycleStore, generate, *, search=None, stage='daily',
+    def __init__(self, store: LifecycleStore, generate, *, search=None, search_current=None, stage='daily',
                  context_chars=7000):
         if stage not in STAGES:
             raise ValueError('unknown configured story stage')
         self.store, self.generate, self.search = store, generate, search
+        self.search_current = search_current or search
         self.stage, self.context_chars = stage, context_chars
 
     def reply(self, owner, event_id, messages):
@@ -440,6 +441,8 @@ class Runtime:
                                    excluded_ids=[item['old_id'] for item in unresolved])
         trace['selected_memories'] = selected
         hits_by_id = {}
+        def retrieval_order(hit):
+            return (hit.get('retrieval_tier', 0), -hit.get('score', 0))
         # Always retrieve against the actual utterance. Planner omissions must
         # not suppress relevant canonical knowledge in an ordinary invitation.
         # Generated queries supplement this; the reranker decides relevance.
@@ -453,7 +456,10 @@ class Runtime:
         for query in trace['retrieval_queries']:
             if not query.strip():
                 continue
-            for hit in self.search(query, messages[:-1]):
+            # Supplemental admission was calibrated on user utterances. Never
+            # silently extend that policy to generated or history queries.
+            retrieve = self.search_current if query == current else self.search
+            for hit in retrieve(query, messages[:-1]):
                 meta = hit.get('metadata', {})
                 # Unannotated script chunks cannot silently leak later knowledge.
                 if self.stage not in meta.get('allowed_stages', []):
@@ -464,14 +470,16 @@ class Runtime:
                 score = hit.get('score', 0)
                 if type(score) not in (int, float) or not math.isfinite(score) or not 0 <= score <= 1:
                     raise ValueError('invalid canonical relevance score')
-                # Several queries can return the same card. Preserve its best
-                # scored evidence, not whichever query happened to run first.
+                tier = hit.get('retrieval_tier', 0)
+                if type(tier) is not int or tier not in (0, 1):
+                    raise ValueError('invalid canonical retrieval tier')
+                # Prefer primary admissions, then the best score within a tier.
                 previous = hits_by_id.get(ident)
-                if previous is None or score > previous.get('score', 0):
+                if previous is None or retrieval_order(hit) < retrieval_order(previous):
                     hits_by_id[ident] = hit
         # Budget is applied below, after the union is ranked. Otherwise weaker
         # early-query hits can crowd out a strong later-query result.
-        hits = sorted(hits_by_id.values(), key=lambda hit: -hit.get('score', 0))
+        hits = sorted(hits_by_id.values(), key=retrieval_order)
         trace['retrieved'] = hits
         memory_data = [{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree', 'evidence', 'source_id')} for r in selected]
         context = {'story_stage': self.stage, 'operations': answer_operations(trace['operations']), 'memory': memory_data, 'references': []}

@@ -26,7 +26,7 @@ def file_sha(path):
     return digest.hexdigest()
 
 
-def build_app(store, users, generator_factory, *, system, identity, search=None,
+def build_app(store, users, generator_factory, *, system, identity, search=None, search_current=None,
               stage='daily', trace_dir=None, principal_resolver=None):
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import StreamingResponse
@@ -89,7 +89,8 @@ def build_app(store, users, generator_factory, *, system, identity, search=None,
         rid = 'chatcmpl-' + uuid.uuid4().hex
         def execute():
             with pipeline_lock:
-                runtime = Runtime(store, generator_factory(body), search=search, stage=stage)
+                runtime = Runtime(store, generator_factory(body), search=search,
+                                  search_current=search_current, stage=stage)
                 answer, trace = runtime.reply(owner, event_id, messages)
                 trace.update({'request_id': rid, 'identity': identity, 'event_id': event_id})
                 if trace_dir:
@@ -142,8 +143,16 @@ def main():
     parser.add_argument('--stage', choices=['daily', 'school_later', 'eden_partial', 'past_recovered'], default='daily')
     parser.add_argument('--script-source', type=Path)
     parser.add_argument('--story-cards', type=Path, nargs='+')
+    parser.add_argument('--story-dense-model', help='optional local BGE Chinese model for supplementary retrieval')
+    parser.add_argument('--story-dense-threshold', type=float, help='explicit corpus-calibrated cosine threshold')
     parser.add_argument('--port', type=int, default=8022)
     args = parser.parse_args()
+    from atri_story import validate_dense_settings
+    validate_dense_settings(args.story_dense_model, args.story_dense_threshold)
+    if bool(args.story_cards) != bool(args.script_source):
+        raise ValueError('--story-cards and --script-source are required together')
+    if args.story_dense_model is not None and not args.story_cards:
+        raise ValueError('dense story retrieval requires --story-cards and --script-source')
     adapter_sha = file_sha(args.adapter / 'adapter_model.safetensors')
     if adapter_sha != args.adapter_sha:
         raise ValueError('adapter SHA mismatch')
@@ -185,18 +194,20 @@ def main():
         from atri_generation import hf_generator
         return hf_generator(tok, model, loader.lock, body, planner_adapter=args.planner_adapter,
                             planner_schema=args.planner_schema)
-    search = None
-    if bool(args.story_cards) != bool(args.script_source):
-        raise ValueError('--story-cards and --script-source are required together')
+    search = search_current = None
     if args.story_cards:
         from atri_rag import Config, LocalReranker
-        from atri_story import StageCorpus
+        from atri_story import StageCorpus, LocalDenseScorer
         corpus = StageCorpus(args.script_source, args.story_cards, args.stage,
-                             reranker=LocalReranker(Config().rerank_model))
+            reranker=LocalReranker(Config().rerank_model),
+            dense_scorer=LocalDenseScorer(args.story_dense_model) if args.story_dense_model else None,
+            dense_threshold=args.story_dense_threshold)
         identity['story_source_hashes'] = corpus.source_hashes
+        identity['story_dense'] = {'model': args.story_dense_model, 'threshold': args.story_dense_threshold}
         search = corpus.search
+        search_current = corpus.search_current
     store = LifecycleStore(args.database, Policy(**json.loads(args.memory_policy.read_text())) if args.memory_policy else Policy())
-    options=dict(system=args.system.read_text(),identity=identity,search=search,
+    options=dict(system=args.system.read_text(),identity=identity,search=search,search_current=search_current,
                  stage=args.stage,trace_dir=args.traces)
     if args.qq_secret:
         from atri_bridge import read_secret

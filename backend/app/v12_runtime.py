@@ -15,10 +15,11 @@ from atri_runtime import Runtime
 
 
 class WebRuntime:
-    def __init__(self, store, generator_factory, *, identity, search=None,
+    def __init__(self, store, generator_factory, *, identity, search=None, search_current=None,
                  stage='daily', trace_dir=None):
         self.store, self.factory, self.identity = store, generator_factory, identity
         self.search, self.stage = search, stage
+        self.search_current = search_current
         self.lock = threading.Lock()
         # Serialize the native web append/history/generate/persist transaction,
         # not just model.generate: another post must not become the current turn.
@@ -35,7 +36,8 @@ class WebRuntime:
 
     def reply(self, user_id, message_id, messages):
         with self.lock:
-            answer, trace = Runtime(self.store,self.factory({}),search=self.search,stage=self.stage).reply(
+            answer, trace = Runtime(self.store,self.factory({}),search=self.search,
+                                   search_current=self.search_current,stage=self.stage).reply(
                 self.owner(user_id),'web-message:'+str(message_id),messages)
             rid = uuid.uuid4().hex
             trace.update(request_id=rid,identity=self.identity,entrance='web')

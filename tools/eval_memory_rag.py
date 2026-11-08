@@ -31,7 +31,11 @@ def main():
     parser.add_argument('--sse', action='store_true')
     parser.add_argument('--planner-adapter', action='store_true')
     parser.add_argument('--planner-schema', action='store_true')
+    parser.add_argument('--story-dense-model')
+    parser.add_argument('--story-dense-threshold', type=float)
     args = parser.parse_args()
+    from atri_story import validate_dense_settings
+    validate_dense_settings(args.story_dense_model, args.story_dense_threshold)
     seal = json.loads(args.seal.read_text())
     assert args.cases.name in seal['files']
     assert digest(args.cases) == seal['files'][args.cases.name]['sha256']
@@ -70,7 +74,7 @@ def main():
     from fastapi.testclient import TestClient
     from importlib.metadata import version
     from atri_memory_lifecycle import Candidate, LifecycleStore
-    from atri_story import StageCorpus
+    from atri_story import StageCorpus, LocalDenseScorer
     from atri_rag import Config, LocalReranker
     from serve_memory_rag import build_app
     tok, model = original.state['tok'], original.state['model']
@@ -87,6 +91,7 @@ def main():
         'loaded_tensors_exact':len(observed), 'adapter_dtypes':sorted(set(observed.values())),
         'planner_adapter_enabled':args.planner_adapter, 'answer_adapter_enabled':True,
         'planner_schema_enabled':args.planner_schema,
+        'story_dense': {'model': args.story_dense_model, 'threshold': args.story_dense_threshold},
         'base_and_tokenizer_sha256':verified, 'enable_thinking':False,
         'chat_template_sha256':hashlib.sha256(tok.chat_template.encode()).hexdigest(),
         'quantization':model.config.quantization_config.to_dict(), 'default_generation':model.generation_config.to_dict(),
@@ -137,13 +142,16 @@ def main():
         return generate
     store=LifecycleStore(args.out/'improved-memory.sqlite3')
     reranker=LocalReranker(Config().rerank_model)
+    dense=LocalDenseScorer(args.story_dense_model) if args.story_dense_model else None
     card_files=[Path(__file__).resolve().parents[1]/'rag'/name for name in
                 ['character_facts.json','story_stages.json','story_daily_extended.json']]
     clients={}
     for stage in sorted({r['stage'] for r in rows}):
-        corpus=StageCorpus(args.script_source,card_files,stage,reranker=reranker)
+        corpus=StageCorpus(args.script_source,card_files,stage,reranker=reranker,
+                          dense_scorer=dense,dense_threshold=args.story_dense_threshold)
         clients[stage]=TestClient(build_app(store,users,factory,system=original.default_system(),
-            identity=identity,search=corpus.search,stage=stage,trace_dir=args.out/'traces'))
+            identity=identity,search=corpus.search,search_current=corpus.search_current,
+            stage=stage,trace_dir=args.out/'traces'))
     legacy=TestClient(original.build_app())
     all_http=[]
     for row in rows:

@@ -15,7 +15,7 @@ from atri_model_identity import verify_loaded
 
 
 def mount_runtime(app, *, tokenizer, model, base_path, base_manifest, adapter_path, expected_adapter_sha,
-                  users, database, system, search, stage='daily', policy=None,
+                  users, database, system, search, search_current=None, stage='daily', policy=None,
                   trace_dir=None, model_lock=None):
     """Explicit opt-in; pass the same model lock used by the notebook's old route."""
     if model_lock is None:
@@ -24,6 +24,7 @@ def mount_runtime(app, *, tokenizer, model, base_path, base_manifest, adapter_pa
                            adapter=adapter_path,adapter_sha=expected_adapter_sha)
     store=LifecycleStore(database,policy or Policy())
     runtime_app=build_app(store,users,lambda body:hf_generator(tokenizer,model,model_lock,body),
-                          system=system,identity=identity,search=search,stage=stage,trace_dir=trace_dir)
+                          system=system,identity=identity,search=search,search_current=search_current,
+                          stage=stage,trace_dir=trace_dir)
     app.mount('/v12',runtime_app)
     return runtime_app

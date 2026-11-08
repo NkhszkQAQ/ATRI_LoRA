@@ -261,6 +261,49 @@ def test_later_query_strong_hit_precedes_weak_hits_when_context_is_full(tmp_path
     assert [h['node_id'] for h in json.loads(payload)['references']] == ['strong']
 
 
+def test_primary_retrieval_precedes_dense_across_queries_and_budget(tmp_path):
+    store = LifecycleStore(tmp_path/'facts.db')
+    def hit(ident, score, tier):
+        return {'node_id': ident, 'score': score, 'retrieval_tier': tier,
+                'text': ident + '资料内容。'*70,
+                'metadata': {'allowed_stages': ['daily']}}
+    def search(query, history):
+        if query == '当前话题':
+            return [hit('shared', .99, 1), hit('supplement', .98, 1)]
+        return [hit('shared', .55, 0), hit('primary', .6, 0)]
+    _, trace = Runtime(store, generator({'queries': ['相关话题']}), search=search,
+                      context_chars=800).reply('alice','new',dialogue('当前话题'))
+    assert [h['node_id'] for h in trace['retrieved']] == ['primary','shared','supplement']
+    assert trace['retrieved'][1]['retrieval_tier'] == 0
+    payload = trace['calls'][-1]['messages'][-1]['content'].split('\n',1)[1].split('\n\n用户说：\n')[0]
+    assert [h['node_id'] for h in json.loads(payload)['references']] == ['primary']
+
+
+@pytest.mark.parametrize('tier', [-1, 2, True, '1'])
+def test_invalid_retrieval_tier_fails_closed(tmp_path, tier):
+    def search(query, history):
+        return [{'node_id':'bad','score':.9,'retrieval_tier':tier,
+                 'text':'资料','metadata':{'allowed_stages':['daily']}}]
+    store = LifecycleStore(tmp_path/'facts.db')
+    with pytest.raises(ValueError, match='retrieval tier'):
+        Runtime(store, generator({}), search=search).reply('alice','one',dialogue('话题'))
+
+
+def test_supplementary_retrieval_only_receives_current_utterance(tmp_path):
+    calls = []
+    def primary(query, history):
+        calls.append(('primary', query)); return []
+    def current(query, history):
+        calls.append(('current', query)); return []
+    messages = dialogue('上个话题') + [{'role':'assistant','content':'回答'},
+                                    {'role':'user','content':'当前话题'}]
+    Runtime(LifecycleStore(tmp_path/'facts.db'),
+            generator({'queries':['生成的查询','当前话题']}), search=primary,
+            search_current=current).reply('alice','one',messages)
+    assert calls == [('current','当前话题'), ('primary','上个话题\n当前话题'),
+                     ('primary','生成的查询')]
+
+
 @pytest.mark.parametrize('text', ['我的室友喜欢橙汁', '我哥哥喜欢橙汁', '我的同事喜欢橙汁'])
 def test_unlisted_relationship_cannot_be_admitted_as_the_users_preference(text, tmp_path):
     item = dict(subject='user', predicate='preference', value='橙汁', evidence=text,
