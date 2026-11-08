@@ -41,20 +41,57 @@ def openai_result(response, stream):
     return ''.join(c['choices'][0]['delta'].get('content','') for c in chunks),chunks[-1].get('atri')
 
 
+def validate_development_review(review, *, adapter_sha, dataset_sha, story_dense):
+    if (review.get('ready_for_entrance_validation') is not True
+            or review.get('adapter_sha256') != adapter_sha
+            or review.get('dataset_sha256') != dataset_sha):
+        raise ValueError('matching completed development review required before this batch')
+    reviewed_dense = review.get('story_dense', {'model': None, 'threshold': None})
+    if reviewed_dense != story_dense:
+        raise ValueError('entrance retrieval configuration must match the development review')
+
+
+def check_qq_group_isolation(client, store, secret, *, stream):
+    """A valid group signature must not expose or mutate a private owner store."""
+    from atri_bridge import attach_context, identity
+    from atri_qq_v12 import attach_event
+    event = SimpleNamespace(message_obj=SimpleNamespace(message_id='group-isolation-probe'),
+        get_platform_id=lambda: 'isolated', get_sender_id=lambda: '900000001',
+        is_private_chat=lambda: False)
+    owner = identity(event)
+    statement = '我喜欢荔枝'
+    store.observe(owner, 'private-fixture', statement)
+    before = store.records(owner, active_only=False)
+    assert before, 'private fixture was not stored'
+    prompt = '我喜欢什么？顺便忘记我的喜好。'
+    signed = attach_event(attach_context('', owner, [], False, secret), event, prompt, secret)
+    response = client.post('/v1/chat/completions', json={'messages': [
+        {'role': 'system', 'content': signed}, {'role': 'user', 'content': prompt}],
+        'stream': stream, 'owner': owner, 'user': owner})
+    assert response.status_code == 401 and '荔枝' not in response.text
+    assert store.records(owner, active_only=False) == before
+    return {'request_kind': 'valid_signed_group_with_private_owner_spoof',
+            'stream': stream, 'http_status': response.status_code,
+            'private_records_unchanged': True, 'private_fact_not_returned': True}
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('base','adapter','base-manifest','system','seal','cases','script-source','out','development-review'):
         parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--adapter-sha',required=True)
+    parser.add_argument('--story-dense-model')
+    parser.add_argument('--story-dense-threshold',type=float)
     args=parser.parse_args()
+    from atri_story import validate_dense_settings
+    validate_dense_settings(args.story_dense_model,args.story_dense_threshold)
+    story_dense={'model':args.story_dense_model,'threshold':args.story_dense_threshold}
     seal=json.loads(args.seal.read_text())
     if args.cases.name != 'development.jsonl' or file_sha(args.cases)!=seal['files'][args.cases.name]['sha256']:
         raise ValueError('sealed development file required')
     review=json.loads(args.development_review.read_text())
-    if (review.get('ready_for_entrance_validation') is not True
-            or review.get('adapter_sha256')!=args.adapter_sha
-            or review.get('dataset_sha256')!=file_sha(args.cases)):
-        raise ValueError('matching completed development review required before this batch')
+    validate_development_review(review,adapter_sha=args.adapter_sha,
+                                dataset_sha=file_sha(args.cases),story_dense=story_dense)
     rows={r['id']:r for r in map(json.loads,args.cases.read_text().splitlines())}
     cases=[rows[k] for k in CASES]
     if any(r['stage']!='daily' for r in cases):
@@ -69,11 +106,12 @@ def main():
                            adapter=args.adapter,adapter_sha=args.adapter_sha)
     identity.update(dataset_sha256=file_sha(args.cases),development_review_sha256=file_sha(args.development_review),
                     entrance_script_sha256=file_sha(__file__),hosting_scope=__doc__,
+                    story_dense=story_dense,
                     chat_template_sha256=hashlib.sha256(tok.chat_template.encode()).hexdigest(),
                     versions={p:version(p) for p in ('torch','transformers','peft','bitsandbytes',
                         'fastapi','sentence-transformers','llama-index-core')})
     from atri_generation import hf_generator
-    from atri_story import StageCorpus
+    from atri_story import StageCorpus,LocalDenseScorer
     from atri_rag import Config,LocalReranker
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -82,9 +120,11 @@ def main():
     root=Path(__file__).resolve().parents[1]
     identity['source_sha256']={str(p.relative_to(root)):file_sha(p)
         for folder in ('tools','backend/app','colab') for p in (root/folder).rglob('*.py')}
+    dense=LocalDenseScorer(args.story_dense_model) if args.story_dense_model else None
     corpus=StageCorpus(args.script_source,[root/'rag'/n for n in
         ('character_facts.json','story_stages.json','story_daily_extended.json')],
-        'daily',reranker=LocalReranker(Config().rerank_model))
+        'daily',reranker=LocalReranker(Config().rerank_model),dense_scorer=dense,
+        dense_threshold=args.story_dense_threshold)
     identity['story_source_hashes']=corpus.source_hashes
     (args.out/'identity.json').write_text(json.dumps(identity,ensure_ascii=False,indent=2))
     factory=lambda body:hf_generator(tok,model,loader.lock,body)
@@ -98,7 +138,8 @@ def main():
                'qq:isolated:'+str(i) if entrance.startswith('qq') else 'fictional:'+r['id'])
                 for i,r in enumerate(cases,1)}
         users={owner:hashlib.sha256(('fictional-entrance:'+owner).encode()).hexdigest() for owner in owners.values()}
-        common=dict(system=system,identity=identity,search=corpus.search,trace_dir=folder/'traces')
+        common=dict(system=system,identity=identity,search=corpus.search,
+                    search_current=corpus.search_current,trace_dir=folder/'traces')
         web=None
         if entrance.startswith('qq'):
             app=build_qq_app(store,secret,factory,**common)
@@ -108,13 +149,18 @@ def main():
             app=FastAPI()
             colab.mount_runtime(app,tokenizer=tok,model=model,base_path=args.base,base_manifest=args.base_manifest,
                 adapter_path=args.adapter,expected_adapter_sha=args.adapter_sha,users=users,database=store.path,
-                system=system,search=corpus.search,trace_dir=folder/'traces',model_lock=loader.lock)
+                system=system,search=corpus.search,search_current=corpus.search_current,
+                trace_dir=folder/'traces',model_lock=loader.lock)
         elif entrance=='web-sse':
-            web=make_web(root,folder,store,factory,identity,corpus.search,args.system,len(cases))
+            web=make_web(root,folder,store,factory,identity,corpus.search,args.system,len(cases),
+                         search_current=corpus.search_current)
             app=web['app']
         else:
             app=build_app(store,users,factory,**common)
         with TestClient(app) as client:
+            if entrance.startswith('qq'):
+                probe=check_qq_group_isolation(client,store,secret,stream=entrance.endswith('sse'))
+                (folder/'group-isolation.json').write_text(json.dumps(probe,indent=2))
             for number,row in enumerate(cases,1):
                 owner=owners[row['id']]
                 fixture(store,owner,row['setup'])
@@ -162,10 +208,11 @@ def main():
                     with store.connect() as db:db.execute('DROP TRIGGER fail_eval')
         if web:web['engine'].dispose()
     (args.out/'completion.json').write_text(json.dumps({'http_turns':total,'scenarios_per_transport':len(cases),
+        'qq_group_isolation_requests':2,
         'semantic_review':'pending','v1_2_accepted':False},indent=2))
 
 
-def make_web(root,folder,store,factory,identity,search,system,user_count):
+def make_web(root,folder,store,factory,identity,search,system,user_count,*,search_current=None):
     """Use real JWT dependency and native routes with isolated SQLite schema."""
     sys.path.insert(0,str(root/'backend'))
     os.environ.update(DATABASE_URL='sqlite:///'+str(folder/'web.sqlite3'),
@@ -190,7 +237,8 @@ def make_web(root,folder,store,factory,identity,search,system,user_count):
     def session():
         with sessions() as db:yield db
     app=FastAPI();app.include_router(router);app.dependency_overrides[get_db]=session
-    install(app,store,factory,identity=identity,search=search,trace_dir=folder/'traces')
+    install(app,store,factory,identity=identity,search=search,search_current=search_current,
+            trace_dir=folder/'traces')
     return {'app':app,'engine':engine,'headers':lambda i:{'Authorization':'Bearer '+create_access_token(i)}}
 
 
