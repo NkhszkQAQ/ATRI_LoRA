@@ -72,6 +72,17 @@ def test_failed_planning_cannot_leave_role_adapter_disabled():
     assert model.layer.disable_adapters is False
 
 
+def test_rag_review_uses_base_even_when_initial_planner_uses_role_adapter():
+    model = Model()
+    generate = hf_generator(Tokenizer(), model, threading.Lock(), {}, planner_adapter=True)
+    generate([], kind='plan')
+    result = generate([], kind='review')
+    generate([], kind='answer')
+    assert model.modes == [False, True, False]
+    assert result.metadata['adapter_enabled'] is False
+    assert result.metadata['format_constraint'] is None
+
+
 def test_unexpected_loaded_adapter_mode_is_rejected():
     model = Model(); model.layer.disable_adapters = True
     generate = hf_generator(Tokenizer(), model, threading.Lock(), {})

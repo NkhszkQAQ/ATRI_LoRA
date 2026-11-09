@@ -16,5 +16,6 @@
   "stage": "daily",
   "planner_adapter": false,
   "planner_schema": false,
+  "rag_planning": false,
   "port": 8022
 }

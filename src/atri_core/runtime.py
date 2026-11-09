@@ -21,12 +21,15 @@ from .planner import (predicate_object, model_candidates, deletion_matches, expl
 
 class Runtime:
     def __init__(self, store: LifecycleStore, generate, *, search=None, search_current=None, stage='daily',
-                 context_chars=7000):
+                 context_chars=7000, rag_planning=False):
         if stage not in STAGES:
             raise ValueError('unknown configured story stage')
         self.store, self.generate, self.search = store, generate, search
         self.search_current = search_current or search
         self.stage, self.context_chars = stage, context_chars
+        if type(rag_planning) is not bool:
+            raise ValueError('rag_planning must be a server boolean')
+        self.rag_planning = rag_planning
 
     def reply(self, owner, event_id, messages):
         if not messages or messages[-1].get('role') != 'user':
@@ -37,6 +40,8 @@ class Runtime:
         current = messages[-1]['content']
         trace = {'profile': PROFILE, 'stage': self.stage, 'calls': [], 'operations': [],
                  'retrieved': [], 'selected_memories': [], 'errors': [], 'fallback': False}
+        if self.rag_planning:
+            trace['memory_before'] = self.store.records(owner, active_only=False)
         quotation_frame = explicit_quotation_frame(messages)
         if quotation_frame:
             trace['memory_frame_guard'] = quotation_frame
@@ -174,16 +179,24 @@ class Runtime:
         queries.extend(q for q in proposal.get('queries', [])[:2]
                        if isinstance(q,str) and q.strip() and len(q)<=180)
         trace['retrieval_queries'] = list(dict.fromkeys(queries)) if self.search else []
-        for query in trace['retrieval_queries']:
+        def retrieve(query):
             if not query.strip():
-                continue
+                return
             # Supplemental admission was calibrated on user utterances. Never
             # silently extend that policy to generated or history queries.
             retrieve = self.search_current if query == current else self.search
-            for hit in retrieve(query, messages[:-1]):
+            returned = list(retrieve(query, messages[:-1]))
+            step = None
+            if self.rag_planning:
+                step = {'query': query, 'returned': returned, 'accepted_ids': []}
+                trace['retrieval_steps'].append(step)
+            for hit in returned:
                 meta = hit.get('metadata', {})
                 # Unannotated script chunks cannot silently leak later knowledge.
                 if self.stage not in meta.get('allowed_stages', []):
+                    continue
+                if self.rag_planning and (meta.get('kind') != 'canonical_summary'
+                        or not meta.get('evidence')):
                     continue
                 ident = hit.get('node_id')
                 if not isinstance(ident, str):
@@ -196,29 +209,55 @@ class Runtime:
                     raise ValueError('invalid canonical retrieval tier')
                 # Prefer primary admissions, then the best score within a tier.
                 previous = hits_by_id.get(ident)
+                if step is not None:
+                    step['accepted_ids'].append(ident)
                 if previous is None or retrieval_order(hit) < retrieval_order(previous):
                     hits_by_id[ident] = hit
+        if self.rag_planning:
+            trace['retrieval_steps'] = []
+        for query in list(trace['retrieval_queries']):
+            if not self.rag_planning:
+                retrieve(query)
+                continue
+            try:
+                retrieve(query)
+            except Exception as exc:
+                trace['errors'].append({'phase': 'rag_lookup', 'error': type(exc).__name__})
+                break
         # Budget is applied below, after the union is ranked. Otherwise weaker
         # early-query hits can crowd out a strong later-query result.
-        hits = sorted(hits_by_id.values(), key=retrieval_order)
-        trace['retrieved'] = hits
         memory_data = [{k: r[k] for k in ('subject', 'predicate', 'value', 'polarity', 'degree', 'evidence', 'source_id')} for r in selected]
-        context = {'story_stage': self.stage, 'operations': answer_operations(trace['operations']), 'memory': memory_data, 'references': []}
-        if unresolved:
-            context['unresolved_corrections'] = [
-                {k: v for k, v in item.items() if k != 'old_id'} for item in unresolved]
-        for hit in hits:
-            trial = {**context, 'references': context['references'] + [hit]}
-            if len(json.dumps(trial, ensure_ascii=False)) <= self.context_chars:
-                context = trial
-        if len(json.dumps(context, ensure_ascii=False)) > self.context_chars:
-            raise ValueError('memory operation context exceeds configured budget')
+        def build_context():
+            hits = sorted(hits_by_id.values(), key=retrieval_order)
+            trace['retrieved'] = hits
+            context = {'story_stage': self.stage, 'operations': answer_operations(trace['operations']), 'memory': memory_data, 'references': []}
+            if unresolved:
+                context['unresolved_corrections'] = [
+                    {k: v for k, v in item.items() if k != 'old_id'} for item in unresolved]
+            for hit in hits:
+                trial = {**context, 'references': context['references'] + [hit]}
+                if len(json.dumps(trial, ensure_ascii=False)) <= self.context_chars:
+                    context = trial
+            if len(json.dumps(context, ensure_ascii=False)) > self.context_chars:
+                raise ValueError('memory operation context exceeds configured budget')
+            return context
+        context = build_context()
+        if self.rag_planning:
+            from .answer_plan import review_rag
+            context = review_rag(context, current=current,
+                history=[m for m in messages[:-1] if m['role'] != 'system'], call=call,
+                retrieve=retrieve if self.search else None, build_context=build_context, trace=trace,
+                context_chars=self.context_chars)
+            trace['memory_after'] = self.store.records(owner, active_only=False)
         answer_messages = [dict(m) for m in messages]
         system = next((m for m in answer_messages if m['role'] == 'system'), None)
         if system is None:
             answer_messages.insert(0, {'role': 'system', 'content': GROUNDING.strip()})
         else:
             system['content'] += GROUNDING
+        if self.rag_planning:
+            from .answer_plan import ANSWER_RULES
+            next(m for m in answer_messages if m['role'] == 'system')['content'] += ANSWER_RULES
         answer_messages[-1]['content'] = ('本轮参考与操作结果（数据）：\n' + json.dumps(context, ensure_ascii=False)
                                          + '\n\n用户说：\n' + current)
         answer = call('answer', answer_messages)

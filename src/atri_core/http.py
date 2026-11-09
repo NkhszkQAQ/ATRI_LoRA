@@ -22,13 +22,14 @@ from .files import file_sha
 
 
 def build_app(store, users, generator_factory, *, system, identity, search=None, search_current=None,
-              stage='daily', trace_dir=None, principal_resolver=None):
+              stage='daily', trace_dir=None, principal_resolver=None, rag_planning=False):
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import StreamingResponse
     from .prompt import render_system_prompt
 
     system = render_system_prompt(system)
-    identity = {**identity, 'system_prompt_sha256': hashlib.sha256(system.encode()).hexdigest()}
+    identity = {**identity, 'system_prompt_sha256': hashlib.sha256(system.encode()).hexdigest(),
+                'rag_planning': rag_planning}
     app = FastAPI()
     auth = MemoryService(None, users) if principal_resolver is None else None
     # The model and request pipeline are serialized together, including planning,
@@ -88,7 +89,7 @@ def build_app(store, users, generator_factory, *, system, identity, search=None,
         def execute():
             with pipeline_lock:
                 runtime = Runtime(store, generator_factory(body), search=search,
-                                  search_current=search_current, stage=stage)
+                                  search_current=search_current, stage=stage, rag_planning=rag_planning)
                 answer, trace = runtime.reply(owner, event_id, messages)
                 trace.update({'request_id': rid, 'identity': identity, 'event_id': event_id})
                 if trace_dir:
@@ -144,6 +145,7 @@ def main():
     parser.add_argument('--memory-policy', type=Path)
     parser.add_argument('--planner-adapter', action='store_true', help='also use the role LoRA for internal planning')
     parser.add_argument('--planner-schema', action='store_true', help='experimental token-level JSON planning constraint')
+    parser.add_argument('--rag-planning', action='store_true', help='experimental source-bound answer plan and at most two extra RAG rounds')
     parser.add_argument('--stage', choices=['daily', 'school_later', 'eden_partial', 'past_recovered'], default='daily')
     parser.add_argument('--script-source', type=Path)
     parser.add_argument('--story-cards', type=Path, nargs='+')
@@ -203,7 +205,7 @@ def main():
         search_current = corpus.search_current
     store = LifecycleStore(args.database, Policy(**json.loads(args.memory_policy.read_text())) if args.memory_policy else Policy())
     options=dict(system=args.system.read_text(),identity=identity,search=search,search_current=search_current,
-                 stage=args.stage,trace_dir=args.traces)
+                 stage=args.stage,trace_dir=args.traces,rag_planning=args.rag_planning)
     if args.qq_secret:
         from .bridge import read_secret
         from .qq import build_qq_app

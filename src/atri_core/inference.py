@@ -30,7 +30,7 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         raise ValueError('top_p must be finite and in (0,1]')
 
     def generate(messages, *, kind):
-        if kind not in {'plan', 'answer'}:
+        if kind not in {'plan', 'review', 'answer'}:
             raise ValueError('unknown generation purpose')
         prompt = tokenizer.apply_chat_template(messages, tokenize=False,
                     add_generation_prompt=True, enable_thinking=False)
@@ -38,7 +38,7 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         if inputs['input_ids'].shape[-1] > max_input_tokens:
             raise ValueError('conversation or memory inventory exceeds the server input token budget')
         inputs = inputs.to(model.device)
-        kwargs = dict(max_new_tokens=512 if kind == 'plan' else limit,
+        kwargs = dict(max_new_tokens=512 if kind in {'plan', 'review'} else limit,
                       do_sample=True, temperature=temperature, top_p=top_p,
                       repetition_penalty=1.1,
                       pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, use_cache=True)
@@ -48,7 +48,7 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         if kind == 'plan' and planner_schema:
             from .schema import planner_constraint
             kwargs['prefix_allowed_tokens_fn'], constraint = planner_constraint(tokenizer)
-        disabled = kind == 'plan' and not planner_adapter
+        disabled = kind == 'review' or (kind == 'plan' and not planner_adapter)
         with lock, torch.inference_mode(), (model.disable_adapter() if disabled else nullcontext()):
             actual_modes = {m.disable_adapters for m in model.modules()
                             if isinstance(getattr(m, 'disable_adapters', None), bool)}

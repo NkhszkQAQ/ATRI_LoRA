@@ -12,7 +12,7 @@ from .contracts import STAGES
 
 PATHS = {"base", "adapter", "system", "database", "traces", "users", "qq_secret",
          "qq_context_store", "base_manifest", "memory_policy", "script_source"}
-BOOLEANS = {"planner_adapter", "planner_schema"}
+BOOLEANS = {"planner_adapter", "planner_schema", "rag_planning"}
 FIELDS = PATHS | BOOLEANS | {"adapter_sha", "story_cards", "story_dense_model",
                               "story_dense_threshold", "stage", "port"}
 
