@@ -18,6 +18,9 @@ node_modules/
 web/dist/
 web/node_modules/
 *.pyc
+*.egg-info/
+build/
+dist/
 memory_data/
 *.sqlite3
 *.sqlite3-*

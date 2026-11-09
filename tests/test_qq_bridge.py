@@ -160,7 +160,7 @@ def test_plain_stream_and_length_limit(proxy):
 
 
 @pytest.fixture
-def plugin(tmp_path, monkeypatch):
+def plugin(tmp_path, monkeypatch, request):
     modules = {}
     for name in ["astrbot", "astrbot.api", "astrbot.api.event", "astrbot.core", "astrbot.core.provider", "astrbot.core.provider.entities", "astrbot.core.star", "astrbot.core.star.filter", "astrbot.core.star.filter.command"]:
         modules[name] = ModuleType(name)
@@ -173,11 +173,15 @@ def plugin(tmp_path, monkeypatch):
     modules["astrbot.core.star.filter.command"].GreedyStr = str
     monkeypatch.setitem(sys.modules, "qqtestplugin", ModuleType("qqtestplugin"))
     for name, value in modules.items(): monkeypatch.setitem(sys.modules, name, value)
-    folder = tmp_path / "plugin"; folder.mkdir()
-    for name in ["atri_bridge.py", "atri_memory.py"]: shutil.copy(ROOT / "tools" / name, folder / name)
+    from package_astrbot_plugin import package_plugin
+    folder = tmp_path / "plugin"
+    package_plugin(folder)
     shutil.copy(ROOT / "integrations/astrbot/atri_rag_memory/main.py", folder / "__init__.py")
     secret = tmp_path / "secret"; secret.write_bytes(SECRET)
     config = tmp_path / "runtime.json"; config.write_text(json.dumps({"shared_secret_file": str(secret), "memory_db": str(tmp_path / "memory.sqlite")}))
+    if getattr(request,'param',None)=='v12':
+        config.write_text(json.dumps({'shared_secret_file':str(secret),'runtime_profile':'memory-rag-v1.2-dev',
+                                     'lifecycle_db':str(tmp_path/'lifecycle.sqlite')}))
     (folder / "settings.json").write_text(json.dumps({"config_path": str(config)}))
     spec = importlib.util.spec_from_file_location("qqtestplugin", folder / "__init__.py", submodule_search_locations=[str(folder)])
     module = importlib.util.module_from_spec(spec); monkeypatch.setitem(sys.modules, "qqtestplugin", module); spec.loader.exec_module(module)
@@ -212,4 +216,28 @@ def test_plugin_only_explicit_private_commands_write_and_users_are_isolated(plug
         _, context = detach_context([{"role": "system", "content": req.system_prompt}], SECRET)
         assert context["records"] == []
         assert plugin.store.list(identity(alice)) == [{"key": "偏好饮品", "value": "乌龙茶"}]
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('plugin',['v12'],indirect=True)
+def test_v12_plugin_signs_current_request_and_commands_share_lifecycle(plugin):
+    from atri_qq_v12 import resolve_event
+    async def run():
+        alice,bob=Event('111'),Event('222')
+        alice.message_obj=SimpleNamespace(message_id='event1')
+        bob.message_obj=SimpleNamespace(message_id='event1')
+        assert plugin.store is None
+        ident=plugin.lifecycle.observe(identity(alice),'fixture','我不喜欢咖啡')['saved'][0]
+        req=SimpleNamespace(system_prompt='外部人设',prompt='我喜欢画画')
+        await plugin.memory_context(alice,req)
+        body={'messages':[{'role':'system','content':req.system_prompt},{'role':'user','content':req.prompt}]}
+        owner,event,history,notice=resolve_event(body,SECRET)
+        assert owner==identity(alice) and event=='qq-event:event1'
+        assert history[-1]['content']=='我喜欢画画'
+        assert [x async for x in plugin.memory(bob,'list')]==['尚无长期记忆。']
+        assert ident in [x async for x in plugin.memory(alice,'list')][0]
+        assert [x async for x in plugin.memory(alice,'del '+ident)]==['已删除。']
+        plugin.lifecycle.observe(identity(alice),'new','我不喜欢咖啡')
+        assert '已经处理' in [x async for x in plugin.memory(alice,'del '+ident)][0]
+        assert len(plugin.lifecycle.records(identity(alice)))==1
     asyncio.run(run())

@@ -59,10 +59,10 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: docker/api/Dockerfile
+      context: ..
+      dockerfile: misc/docker/api/Dockerfile
     container_name: atri-api
-    env_file: [.env]
+    env_file: [../.env]
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-atri}:${POSTGRES_PASSWORD:-change-me-atri-db}@postgres:5432/${POSTGRES_DB:-atri}
       # 默认走本机 LoRA 服务（scripts/serve_lora.py）；仍可改回 http://ollama:11434
@@ -82,8 +82,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./persona:/app/persona:ro
-      - ./app:/app/app
+      - ../persona:/app/persona:ro
+      - ../backend/app:/app/app
+      - ../src:/app/src:ro
     ports:
       - "127.0.0.1:${API_PORT:-3081}:8000"
     networks: [atri-companion-net]
@@ -100,8 +101,8 @@ services:
 
   web:
     build:
-      context: .
-      dockerfile: docker/web/Dockerfile
+      context: ..
+      dockerfile: misc/docker/web/Dockerfile
       args:
         VITE_API_BASE: /api
     container_name: atri-web

@@ -115,18 +115,18 @@
     },
     {
       "id": "taste",
-      "title": "味觉与食物喜好",
+      "title": "味觉感受器与品尝食物",
       "questions": [
         "亚托莉能尝味道吗",
         "机器人有味觉吗"
       ],
-      "answer": "亚托莉具有味觉感受器，能品尝味道；味觉、进食功能与不能吸收营养并不矛盾。",
+      "answer": "亚托莉具有味觉感受器，能品尝食物的味道。她曾与夏生、水菜萌一起吃饭，品尝水菜萌做的煎蛋卷并称赞好吃；能尝味道、能进食，与不能靠吃饭摄取营养并不矛盾。这是当时用餐的经历，不代表她已尝过当前谈到的食物。",
       "evidence": [
         {
           "source": "b112.txt",
           "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
           "scene": 14,
-          "dialogue_start": 24,
+          "dialogue_start": 22,
           "dialogue_end": 29
         }
       ],
@@ -150,13 +150,27 @@
         "亚托莉擅长家务吗",
         "她真的是战斗机器人吗"
       ],
-      "answer": "日常场景中，亚托莉承认自己不会做家务，并解释“战斗机器人”的说法是做家务太差时给自己找的说辞。此段自称不能当作已确认的战斗型号设定。",
+      "answer": "日常时期，亚托莉不会做饭，曾把晚饭做得无法食用。她也亲口承认自己不会做家务，并解释“战斗机器人”的说法是做家务太差时给自己找的说辞。此段自称不能当作已确认的战斗型号设定。",
       "evidence": [
         {
           "source": "b112.txt",
           "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
           "scene": 12,
+          "dialogue_start": 1,
+          "dialogue_end": 4
+        },
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 12,
           "dialogue_start": 22,
+          "dialogue_end": 29
+        },
+        {
+          "source": "b112.txt",
+          "sha256": "eeb8caae8562c626d72798f75d3e8ca12a6f3234c4dd75c82530576ade55d7b5",
+          "scene": 14,
+          "dialogue_start": 24,
           "dialogue_end": 29
         }
       ],

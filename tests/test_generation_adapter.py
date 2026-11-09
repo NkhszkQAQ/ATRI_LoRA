@@ -1,0 +1,144 @@
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
+import sys
+import threading
+
+import pytest
+import torch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+from atri_generation import hf_generator
+
+
+class Batch(dict):
+    def to(self, device):
+        return self
+
+
+class Tokenizer:
+    pad_token_id = 0
+    eos_token_id = 9
+    def apply_chat_template(self, messages, **kwargs):
+        assert kwargs['enable_thinking'] is False
+        return 'prompt'
+    def __call__(self, prompt, **kwargs):
+        return Batch(input_ids=torch.tensor([[1,2,3]]))
+    def decode(self, ids, **kwargs):
+        assert ids == [4,9]
+        return '原始输出'
+
+
+class Model:
+    device = 'cpu'
+    generation_config = SimpleNamespace(eos_token_id=9)
+    def __init__(self):
+        self.layer = SimpleNamespace(disable_adapters=False)
+        self.modes = []
+        self.fail = False
+    def modules(self):
+        return [self.layer]
+    @contextmanager
+    def disable_adapter(self):
+        self.layer.disable_adapters = True
+        try:
+            yield
+        finally:
+            self.layer.disable_adapters = False
+    def generate(self, **kwargs):
+        self.modes.append(self.layer.disable_adapters)
+        if self.fail:
+            raise RuntimeError('generation failed')
+        return torch.tensor([[1,2,3,4,9]])
+
+
+def test_planner_uses_same_base_and_role_adapter_is_restored_for_answer():
+    model = Model()
+    generate = hf_generator(Tokenizer(), model, threading.Lock(), {'seed':17,'max_tokens':20})
+    plan = generate([],kind='plan')
+    answer = generate([],kind='answer')
+    assert model.modes == [True,False]
+    assert plan.metadata['adapter_enabled'] is False and answer.metadata['adapter_enabled'] is True
+    assert answer == '原始输出' and answer.metadata['prompt_token_ids'] == [1,2,3]
+    assert answer.metadata['output_token_ids'] == [4,9]
+    assert answer.metadata['finish_reason'] == 'stop'
+
+
+def test_failed_planning_cannot_leave_role_adapter_disabled():
+    model = Model(); model.fail = True
+    generate = hf_generator(Tokenizer(), model, threading.Lock(), {})
+    with pytest.raises(RuntimeError):
+        generate([],kind='plan')
+    assert model.layer.disable_adapters is False
+
+
+def test_rag_review_uses_base_even_when_initial_planner_uses_role_adapter():
+    model = Model()
+    generate = hf_generator(Tokenizer(), model, threading.Lock(), {}, planner_adapter=True)
+    generate([], kind='plan')
+    lookup = generate([], kind='lookup_plan')
+    result = generate([], kind='review')
+    generate([], kind='answer')
+    assert model.modes == [False, True, True, False]
+    assert lookup.metadata['adapter_enabled'] is False
+    assert lookup.metadata['generation']['max_new_tokens'] == 512
+    assert result.metadata['adapter_enabled'] is False
+    assert result.metadata['format_constraint'] is None
+
+
+def test_unexpected_loaded_adapter_mode_is_rejected():
+    model = Model(); model.layer.disable_adapters = True
+    generate = hf_generator(Tokenizer(), model, threading.Lock(), {})
+    with pytest.raises(ValueError,match='adapter state'):
+        generate([],kind='answer')
+    assert model.modes == []
+
+
+def test_over_budget_input_is_rejected_before_generation_or_adapter_switch():
+    class LongTokenizer(Tokenizer):
+        def __call__(self,prompt,**kwargs):
+            return Batch(input_ids=torch.ones((1,513),dtype=torch.int64))
+    model=Model()
+    generate=hf_generator(LongTokenizer(),model,threading.Lock(),{},max_input_tokens=512)
+    with pytest.raises(ValueError,match='token budget'):
+        generate([],kind='plan')
+    assert model.modes==[] and model.layer.disable_adapters is False
+
+
+def test_optional_schema_is_applied_only_to_planning_and_is_trace_serializable(monkeypatch):
+    import json
+    import atri_plan_schema
+    callbacks = []
+    callback = lambda batch_id, sent: [4,9]
+    monkeypatch.setattr(atri_plan_schema, 'planner_constraint',
+                        lambda tokenizer: (callback, {'schema_sha256': 'fixture'}))
+    class CaptureModel(Model):
+        def generate(self, **kwargs):
+            callbacks.append(kwargs.get('prefix_allowed_tokens_fn'))
+            return super().generate(**kwargs)
+    generate = hf_generator(Tokenizer(), CaptureModel(), threading.Lock(), {}, planner_schema=True)
+    plan = generate([], kind='plan'); answer = generate([], kind='answer')
+    assert callbacks == [callback, None]
+    assert plan.metadata['format_constraint'] == {'schema_sha256': 'fixture'}
+    assert answer.metadata['format_constraint'] is None
+    json.dumps(plan.metadata)
+
+
+def test_base_only_planning_has_no_adapter_and_cannot_answer_as_role():
+    class BaseModel(Model):
+        def modules(self):
+            return []
+        def disable_adapter(self):
+            raise AssertionError('a base model has no adapter to disable')
+    generate = hf_generator(Tokenizer(), BaseModel(), threading.Lock(), {}, base_only=True)
+    result = generate([], kind='lookup_plan')
+    assert result.metadata['adapter_enabled'] is False
+    with pytest.raises(ValueError, match='cannot generate role answers'):
+        generate([], kind='answer')
+
+
+def test_base_only_flag_cannot_hide_an_existing_adapter():
+    model = Model()
+    model.peft_config = {'default': object()}
+    with pytest.raises(ValueError, match='without an adapter'):
+        hf_generator(Tokenizer(), model, threading.Lock(), {}, base_only=True)

@@ -40,7 +40,7 @@ QQ → NapCat → AstrBot（身份校验、私聊记忆插件）
 2. 复制[integrations/astrbot/runtime.example.json](../integrations/astrbot/runtime.example.json)，填写原网关、各模型后端、索引、tokenizer、缓存与新记忆库路径。新记忆库路径应与旧聊天库不同。
 3. 在权限700的数据目录生成至少32随机字节的签名密钥文件，权限600。配置也应只允许部署者读取，不把密钥填进源代码、命令行或Git。
 4. 启动代理：`python tools/atri_qq_proxy.py --config /private/path/runtime.json`，默认只监听 `127.0.0.1:9013`。先验证 `/health` 与实际模型回答，再更改机器人入口。
-5. 将 `integrations/astrbot/atri_rag_memory/` 放入 AstrBot 的插件目录，同时把 `tools/atri_bridge.py`、`tools/atri_memory.py` 复制到该插件目录。将 `settings.example.json` 复制为私有 `settings.json`，只填写 `config_path` 指向运行配置；不要把该设置文件提交Git。
+5. 用 `python tools/package_astrbot_plugin.py --output /private/path/new-atri-plugin` 生成自包含插件，再交付到 AstrBot 插件目录。整合后的工具文件是兼容入口，不能只复制两个文件；包内还需共享核心和 bootstrap。将 `settings.example.json` 复制为私有 `settings.json`，只填写 `config_path` 指向运行配置；不要把该设置文件提交Git。打包命令不安装或重启插件，详情见 [整合说明](INTEGRATION.md)。
 6. 备份 AstrBot 配置、启动脚本和聊天数据库。WAL模式数据库应使用SQLite在线backup接口，不能只复制主文件。备份保留在受限目录，不上传原聊天或密钥。
 7. 短暂停止AstrBot后安装插件，将对应provider的 `api_base` 切到代理 `/v1` 并重启。原模型网关、切换插件、模型进程及NapCat可以保持运行。不要在入口仍指向旧模型时提前加载签名插件，否则旧模型看不到代理的剥离步骤。
 

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atri-core"
+version = "0.1.0"
+description = "Shared ATRI memory, retrieval, prompt, and inference runtime"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+http = ["fastapi>=0.115", "uvicorn>=0.30"]
+inference = ["torch>=2.5", "transformers>=4.51", "peft>=0.14", "bitsandbytes", "accelerate>=1.0"]
+retrieval = ["llama-index-core>=0.14,<0.15", "llama-index-embeddings-huggingface>=0.6,<0.7", "sentence-transformers"]
+
+[project.scripts]
+atri-memory-rag = "atri_core.http:main"
+atri-rag = "atri_core.retrieval:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

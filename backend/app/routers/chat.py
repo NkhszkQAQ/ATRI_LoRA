@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import AsyncIterator
 
@@ -22,16 +23,26 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.get("/memory", response_model=MemoryOut)
-def get_memory(user: User = Depends(get_current_user)):
+def get_memory(request: Request, user: User = Depends(get_current_user)):
+    runtime = getattr(request.app.state, 'v12_runtime', None)
+    if runtime:
+        return MemoryOut(memory_note=runtime.note(user.id))
     return MemoryOut(memory_note=user.memory_note or "")
 
 
 @router.put("/memory", response_model=MemoryOut)
 def put_memory(
     body: MemoryIn,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    runtime = getattr(request.app.state, 'v12_runtime', None)
+    if runtime:
+        if body.memory_note.strip():
+            raise HTTPException(422, '此模式请在对话中说明要保存或更正的事实；清空文本可删除全部长期记忆。')
+        runtime.clear(user.id)
+        return MemoryOut(memory_note='')
     note = set_user_memory(db, user, body.memory_note)
     return MemoryOut(memory_note=note)
 
@@ -49,9 +60,13 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
 
 
 @router.post("/conversations", response_model=ConversationOut)
-def create_conversation(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_conversation(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     settings = get_settings()
     model = _active_model(db, settings.atri_model)
+
+    runtime = getattr(request.app.state, 'v12_runtime', None)
+    if runtime:
+        model = runtime.identity['model']
     c = Conversation(user_id=user.id, title="新对话", model=model)
     db.add(c)
     db.commit()
@@ -88,8 +103,19 @@ async def send_message(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    runtime = getattr(request.app.state, 'v12_runtime', None)
+    if runtime:
+        async with runtime.request_lock:
+            return await _send_message(body,request,user,db)
+    return await _send_message(body,request,user,db)
+
+
+async def _send_message(body,request,user,db):
     settings = get_settings()
     model = _active_model(db, settings.atri_model)
+    runtime = getattr(request.app.state, 'v12_runtime', None)
+    if runtime:
+        model = runtime.identity['model']
 
     if body.conversation_id:
         conv = db.get(Conversation, body.conversation_id)
@@ -107,7 +133,7 @@ async def send_message(
     db.commit()
     db.refresh(user_msg)
     # 跨会话记忆：从用户话抽取长期事实并写入 memory_note（注入下一轮 system）
-    if not hit or hit.action == "logged":
+    if runtime is None and (not hit or hit.action == "logged"):
         try:
             update_user_memory(db, user, body.content)
             db.refresh(user)
@@ -203,11 +229,11 @@ async def send_message(
 
     history = (
         db.query(Message)
-        .filter(Message.conversation_id == conv.id)
+        .filter(Message.conversation_id == conv.id, Message.id <= user_msg.id)
         .order_by(Message.id.asc())
         .all()
     )
-    system = load_system_prompt(user)
+    system = load_system_prompt(user, lifecycle=runtime is not None)
     ollama_msgs = [{"role": "system", "content": system}]
     for m in history:
         if m.role in ("user", "assistant"):
@@ -220,6 +246,23 @@ async def send_message(
 
     conv_id = conv.id
     enable_thinking = bool(body.enable_thinking)
+
+    if runtime:
+        # Keep native web SSE shape. Generation is buffered so the displayed
+        # answer is exactly the runtime's first answer, with no rewrite/fallback.
+        try:
+            answer, metadata = await asyncio.to_thread(runtime.reply,user.id,user_msg.id,ollama_msgs)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(503, 'V1.2 推理失败；未生成助手回复。') from exc
+        db.add(Message(conversation_id=conv_id,role='assistant',content=answer,model=model,meta=metadata))
+        db.commit()
+        async def lifecycle_stream():
+            for offset in range(0,len(answer),32):
+                yield 'data: '+json.dumps({'conversation_id':conv_id,'content':answer[offset:offset+32],
+                    'reasoning':'','done':False},ensure_ascii=False)+'\n\n'
+            yield 'data: '+json.dumps({'conversation_id':conv_id,'content':'','reasoning':'','done':True,
+                'atri':metadata},ensure_ascii=False)+'\n\n'
+        return StreamingResponse(lifecycle_stream(),media_type='text/event-stream')
 
     async def gen() -> AsyncIterator[str]:
         from app.db import SessionLocal
