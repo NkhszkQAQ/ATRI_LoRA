@@ -33,7 +33,7 @@ def test_batch_covers_all_transports_and_leaves_semantic_review_pending(tmp_path
         lambda messages,kind:'{"utterance_kind":"self_report"}' if kind=='plan' else '未经改写的替身输出')
     monkeypatch.setattr(atri_rag,'LocalReranker',lambda *a:None)
     monkeypatch.setattr(atri_story,'StageCorpus',lambda *a,**kw:
-        SimpleNamespace(source_hashes={},search=lambda *a:[]))
+        SimpleNamespace(source_hashes={},search=lambda *a:[],search_current=lambda *a:[]))
     out=tmp_path/'out'
     argv=['eval_v12_entrances','--adapter-sha','fixture-not-real-adapter']
     for name,path in {'base':tmp_path/'base','adapter':tmp_path/'adapter','base-manifest':tmp_path/'unused.json',

@@ -55,7 +55,10 @@ def test_concurrent_limit_and_sql_input(tmp_path):
             return False
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         assert sum(executor.map(put, range(MAX_ITEMS + 8))) == MAX_ITEMS
-    store.put("alice", "0", "updated")
+    # The capacity race can be won by any worker, so update a key that exists.
+    existing_key = store.list("alice")[0]["key"]
+    store.put("alice", existing_key, "updated")
+    assert {row["key"]: row["value"] for row in store.list("alice")}[existing_key] == "updated"
     assert len(store.list("alice")) == MAX_ITEMS
     store.put("bob", "'; DROP TABLE memories;--", "安全保存")
     assert len(store.list("alice")) == MAX_ITEMS

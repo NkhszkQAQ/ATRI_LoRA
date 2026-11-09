@@ -1,0 +1,20 @@
+{
+  "base": "/path/to/Qwen3-8B",
+  "adapter": "/path/to/verified-v1.1-R-adapter",
+  "adapter_sha": "070807668d8c32e6d97d566de6e94d528b2cbfaa4848fbb5e14d80f2a7ca4d9f",
+  "base_manifest": "/path/to/base-manifest.json",
+  "system": "../persona/system_prompt.txt",
+  "database": "/private/path/isolated/lifecycle.sqlite3",
+  "traces": "/private/path/isolated/traces",
+  "users": "/private/path/isolated/users.json",
+  "script_source": "/private/path/script-source",
+  "story_cards": [
+    "../rag/character_facts.json",
+    "../rag/story_stages.json",
+    "../rag/story_daily_extended.json"
+  ],
+  "stage": "daily",
+  "planner_adapter": false,
+  "planner_schema": false,
+  "port": 8022
+}

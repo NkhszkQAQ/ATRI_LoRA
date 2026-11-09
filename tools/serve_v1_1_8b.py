@@ -12,6 +12,10 @@ import threading
 import time
 import uuid
 import asyncio
+from _atri_core_bootstrap import core_module
+
+_core_inference = core_module("inference")
+_core_prompt = core_module("prompt")
 
 BASE = os.environ.get("ATRI_BASE", "/root/autodl-tmp/models/models/Qwen--Qwen3-8B")
 ADAPTER = os.environ.get("ATRI_ADAPTER", "/root/autodl-tmp/atri-v1.1-8b/adapter")
@@ -26,33 +30,11 @@ lock = threading.Lock()
 
 
 def load():
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from peft import PeftModel
-
-    t0 = time.time()
-    print(f"[init] base={BASE}", flush=True)
-    print(f"[init] adapter={ADAPTER}", flush=True)
-    tok = AutoTokenizer.from_pretrained(BASE, trust_remote_code=True)
-    bnb = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE, quantization_config=bnb, device_map="auto", trust_remote_code=True
-    )
-    model = PeftModel.from_pretrained(model, ADAPTER)
-    model.eval()
-    state["tok"] = tok
-    state["model"] = model
-    print(f"[init] ready in {time.time() - t0:.1f}s", flush=True)
+    tok, model = _core_inference.load_model(BASE, ADAPTER)
+    state.update(tok=tok, model=model)
 
 
-def render_system_prompt(text: str) -> str:
-    """Render the standalone persona; lifecycle facts are injected per owner."""
-    return text.strip().replace("{{user}}", "主人").replace("{{honorific}}", "").replace(
-        "{{memory}}", "（长期记忆由服务按当前用户单独注入；未提供的信息不能编造）")
+render_system_prompt = _core_prompt.render_system_prompt
 
 
 def default_system() -> str:

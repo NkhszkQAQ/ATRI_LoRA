@@ -5,6 +5,7 @@ from pathlib import Path
 from app.config import get_settings
 from app.memory import format_memory_block
 from app.models import User
+from atri_core.prompt import render_template
 
 
 def load_system_prompt(user: User | None = None, *, lifecycle=False) -> str:
@@ -27,9 +28,4 @@ def load_system_prompt(user: User | None = None, *, lifecycle=False) -> str:
     if lifecycle:
         lock = (f'\n\n你是亚托莉。当前用户称呼为「{name}{honorific}」。'
                 '夏生等原作人物和当前用户是不同的人，不把人物经历当成用户经历。')
-    return (
-        text.replace("{{user}}", name)
-        .replace("{{honorific}}", honorific)
-        .replace("{{memory}}", memory)
-        + lock
-    )
+    return render_template(text, name, honorific, memory) + lock

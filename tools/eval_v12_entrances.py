@@ -119,7 +119,7 @@ def main():
     from atri_qq_v12 import attach_event,build_qq_app
     root=Path(__file__).resolve().parents[1]
     identity['source_sha256']={str(p.relative_to(root)):file_sha(p)
-        for folder in ('tools','backend/app','colab') for p in (root/folder).rglob('*.py')}
+        for folder in ('src/atri_core','tools','backend/app','colab') for p in (root/folder).rglob('*.py')}
     dense=LocalDenseScorer(args.story_dense_model) if args.story_dense_model else None
     corpus=StageCorpus(args.script_source,[root/'rag'/n for n in
         ('character_facts.json','story_stages.json','story_daily_extended.json')],

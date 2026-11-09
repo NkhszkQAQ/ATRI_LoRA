@@ -173,11 +173,9 @@ def plugin(tmp_path, monkeypatch, request):
     modules["astrbot.core.star.filter.command"].GreedyStr = str
     monkeypatch.setitem(sys.modules, "qqtestplugin", ModuleType("qqtestplugin"))
     for name, value in modules.items(): monkeypatch.setitem(sys.modules, name, value)
-    folder = tmp_path / "plugin"; folder.mkdir()
-    for name in ["atri_bridge.py", "atri_memory.py"]: shutil.copy(ROOT / "tools" / name, folder / name)
-    if getattr(request,'param',None)=='v12':
-        for name in ['atri_memory_lifecycle.py','atri_qq_v12.py']:
-            shutil.copy(ROOT/'tools'/name,folder/name)
+    from package_astrbot_plugin import package_plugin
+    folder = tmp_path / "plugin"
+    package_plugin(folder)
     shutil.copy(ROOT / "integrations/astrbot/atri_rag_memory/main.py", folder / "__init__.py")
     secret = tmp_path / "secret"; secret.write_bytes(SECRET)
     config = tmp_path / "runtime.json"; config.write_text(json.dumps({"shared_secret_file": str(secret), "memory_db": str(tmp_path / "memory.sqlite")}))

@@ -1,0 +1,17 @@
+.git
+.venv*
+**/node_modules
+**/__pycache__
+.env*
+!.env.example
+*.zip
+*.safetensors
+*.bin
+*.gguf
+*.sqlite*
+rag_storage*
+.rag-cache
+training/data
+archive
+tests
+src/*.egg-info

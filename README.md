@@ -22,6 +22,8 @@
 
 ## ✨ 特点
 
+共享 Memory / RAG / Prompt / 推理实现已集中到 `src/atri_core`；安装、兼容入口、插件打包及未完成验收见 [整合与影响说明](docs/INTEGRATION.md)。新生命周期运行时仍为隔离开发配置，不自动替换现用机器人或原 Colab 演示。
+
 - **两档底座，按显卡挑**：4B 版 4bit 量化约 2.5 GB 显存，8B 版约 6 GB，消费级显卡和 Colab 免费 T4 都能跑
 - **轻量 adapter**：只发 LoRA 权重，4B 版约 45 MB、8B 版约 61 MB，底座自动从 Hugging Face 拉
 - **Colab 零配置体验**：上传 notebook、点运行，十几分钟后拿到一个能直接聊天的网页链接

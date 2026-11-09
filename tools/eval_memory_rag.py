@@ -97,6 +97,8 @@ def main():
         'quantization':model.config.quantization_config.to_dict(), 'default_generation':model.generation_config.to_dict(),
         'versions':{p:version(p) for p in ['torch','transformers','peft','bitsandbytes','llama-index-core','sentence-transformers']},
         'source_hashes':{p.name:digest(p) for p in Path(__file__).parent.glob('*.py')},
+        'core_source_hashes':{str(p.relative_to(Path(__file__).resolve().parents[1])):digest(p)
+            for p in (Path(__file__).resolve().parents[1]/'src/atri_core').rglob('*.py')},
         'dataset_sha256':digest(args.cases), 'system_sha256':digest(args.system),
         'baseline_rag_manifest_sha256':digest(args.baseline_index/'atri_manifest.json'),
         'comparison_differences':['new automatic extraction and lifecycle','new model planning call',
