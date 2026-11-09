@@ -76,9 +76,12 @@ def test_rag_review_uses_base_even_when_initial_planner_uses_role_adapter():
     model = Model()
     generate = hf_generator(Tokenizer(), model, threading.Lock(), {}, planner_adapter=True)
     generate([], kind='plan')
+    lookup = generate([], kind='lookup_plan')
     result = generate([], kind='review')
     generate([], kind='answer')
-    assert model.modes == [False, True, False]
+    assert model.modes == [False, True, True, False]
+    assert lookup.metadata['adapter_enabled'] is False
+    assert lookup.metadata['generation']['max_new_tokens'] == 512
     assert result.metadata['adapter_enabled'] is False
     assert result.metadata['format_constraint'] is None
 
@@ -119,3 +122,23 @@ def test_optional_schema_is_applied_only_to_planning_and_is_trace_serializable(m
     assert plan.metadata['format_constraint'] == {'schema_sha256': 'fixture'}
     assert answer.metadata['format_constraint'] is None
     json.dumps(plan.metadata)
+
+
+def test_base_only_planning_has_no_adapter_and_cannot_answer_as_role():
+    class BaseModel(Model):
+        def modules(self):
+            return []
+        def disable_adapter(self):
+            raise AssertionError('a base model has no adapter to disable')
+    generate = hf_generator(Tokenizer(), BaseModel(), threading.Lock(), {}, base_only=True)
+    result = generate([], kind='lookup_plan')
+    assert result.metadata['adapter_enabled'] is False
+    with pytest.raises(ValueError, match='cannot generate role answers'):
+        generate([], kind='answer')
+
+
+def test_base_only_flag_cannot_hide_an_existing_adapter():
+    model = Model()
+    model.peft_config = {'default': object()}
+    with pytest.raises(ValueError, match='without an adapter'):
+        hf_generator(Tokenizer(), model, threading.Lock(), {}, base_only=True)

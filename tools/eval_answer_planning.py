@@ -31,6 +31,8 @@ def main():
     parser.add_argument('--script-source', type=Path, required=True)
     parser.add_argument('--reranker', required=True, help='local frozen reranker snapshot')
     parser.add_argument('--review-fixtures', type=Path)
+    parser.add_argument('--lookup-fixtures', type=Path,
+                        help='explicit retrieval-needs fixtures for program replay only')
     parser.add_argument('--historical-dir', type=Path)
     parser.add_argument('--base', type=Path)
     parser.add_argument('--adapter', type=Path)
@@ -41,9 +43,9 @@ def main():
     args = parser.parse_args()
     if args.out.exists():
         parser.error('--out must be a new private directory')
-    if args.mode == 'replay' and (not args.review_fixtures or not args.historical_dir):
-        parser.error('replay needs --review-fixtures and --historical-dir')
-    if args.mode == 'real' and (args.review_fixtures or args.historical_dir):
+    if args.mode == 'replay' and (not args.review_fixtures or not args.lookup_fixtures or not args.historical_dir):
+        parser.error('replay needs --lookup-fixtures, --review-fixtures and --historical-dir')
+    if args.mode == 'real' and (args.review_fixtures or args.lookup_fixtures or args.historical_dir):
         parser.error('real mode cannot access archived answers or reviewer fixtures')
     if args.mode == 'real' and (not args.execute or not all((args.base, args.adapter,
             args.base_manifest, args.adapter_sha))):
@@ -57,10 +59,12 @@ def main():
              Path(__file__), *[root/'rag'/n for n in
                 ('character_facts.json', 'story_stages.json', 'story_daily_extended.json')]]
     seal = {str(p): digest(p) for p in files}
-    historical, fixtures = {}, {}
+    historical, fixtures, lookup_fixtures = {}, {}, {}
     if args.mode == 'replay':
         fixtures = json.loads(args.review_fixtures.read_text())
+        lookup_fixtures = json.loads(args.lookup_fixtures.read_text())
         seal[str(args.review_fixtures)] = digest(args.review_fixtures)
+        seal[str(args.lookup_fixtures)] = digest(args.lookup_fixtures)
         for line in (args.historical_dir/'http-results.jsonl').read_text().splitlines():
             row = json.loads(line)
             if row.get('arm') == 'improved' and row.get('turn') == 0:
@@ -120,6 +124,8 @@ def main():
                 return (archived_trace['calls'][0]['raw_first'] if archived_trace else
                     json.dumps({'utterance_kind': 'other', 'queries': [], 'candidates': [],
                                 'memory_scores': [], 'forget_ids': []}))
+            if kind == 'lookup_plan':
+                return json.dumps(lookup_fixtures[case['id']], ensure_ascii=False)
             if kind == 'review':
                 return json.dumps(next(decisions), ensure_ascii=False)
             # An old answer is preserved for inspection only. It was generated
@@ -141,7 +147,8 @@ def main():
             'unknown_retained': not case.get('expect_unknown') or bool(plan['information_gaps']),
             'bounded_lookup': trace['rag_extra_rounds'] <= 2,
             'no_memory_changes': trace['memory_before'] == trace['memory_after'],
-            'valid_arrangement': plan['stop_reason'] != 'invalid_review',
+            'valid_arrangement': plan['stop_reason'] not in
+                {'invalid_review', 'invalid_lookup_plan', 'planner_no_query'},
             'within_context_budget': len(json.dumps(trace['answer_context'], ensure_ascii=False)) <= 7000}
         record = {'case': case['id'], 'group': case['group'], 'mode': args.mode,
             'reviewer': 'fresh_model' if generate_real else 'scripted_protocol_fixture',

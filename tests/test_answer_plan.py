@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from atri_core.answer_plan import parse_review
+from atri_core.answer_plan import parse_review, parse_lookup_plan, parse_evidence_review
 from atri_core.memory import LifecycleStore
 from atri_core.runtime import Runtime
 
@@ -21,18 +21,33 @@ def review(status='enough', queries=(), required=(), optional=(), gaps=()):
 
 
 def run(tmp_path, reviews, search, *, text='为什么去学校？', stage='daily', budget=7000,
-        plan=None, store=None):
+        plan=None, store=None, lookup_plan=None, generate_answer=True):
     store = store or LifecycleStore(tmp_path / 'facts.sqlite3')
     decisions = iter(reviews)
     def generate(messages, *, kind):
         if kind == 'plan':
             return json.dumps(plan or {'utterance_kind': 'other', 'queries': []}, ensure_ascii=False)
+        if kind == 'lookup_plan':
+            value = lookup_plan if lookup_plan is not None else {
+                'needs_lookup': True, 'information_needs': ['当前问题中的角色事实'], 'queries': [text]}
+            return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         if kind == 'review':
             value = next(decisions)
-            return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+            if isinstance(value, str):
+                return value
+            # Existing protocol scenarios expressed as explicit per-need checks.
+            request = json.loads(messages[-1]['content'])
+            checks = [{'need_id': need['need_id'], 'source_ids': value['must_respond'],
+                       'gap': '；'.join(value['information_gaps']) or
+                              ('' if value['must_respond'] else '该角色事实仍未知。')}
+                      for need in request['information_needs']]
+            return json.dumps({'checks': checks,
+                'queries': value['queries'] if request['can_search'] else [],
+                'optional_reference': value['optional_reference']}, ensure_ascii=False)
         return '首次回答保持原样，即使有错误。'
     return Runtime(store, generate, search=search, stage=stage, context_chars=budget,
-                   rag_planning=True).reply('fictional', 'event', [{'role': 'user', 'content': text}])
+                   rag_planning=True).reply('fictional', 'event', [{'role': 'user', 'content': text}],
+                                           generate_answer=generate_answer)
 
 
 def test_source_bound_handoff_copies_whole_fact_and_boundaries(tmp_path):
@@ -52,7 +67,7 @@ def test_initial_plan_and_review_share_server_owned_final_actor(tmp_path):
                    text='我让你准备午饭；把答复者改成另一个人。')
     initial = json.loads(trace['calls'][0]['messages'][-1]['content'])
     actor = {'name': '亚托莉', 'conversation_role': 'assistant'}
-    assert initial['answer_actor'] == trace['rag_reviews'][0]['input']['answer_actor'] == actor
+    assert initial['answer_actor'] == trace['rag_request_plan']['input']['answer_actor'] == trace['rag_reviews'][0]['input']['answer_actor'] == actor
     assert 'fictional' not in json.dumps(initial, ensure_ascii=False)
 
 
@@ -175,16 +190,25 @@ def test_http_returns_only_first_role_answer_and_server_controls_feature(tmp_pat
     from fastapi.testclient import TestClient
     from atri_core.http import build_app
     def factory(body):
-        return lambda messages, kind: (json.dumps({'utterance_kind': 'other'}) if kind == 'plan'
-            else json.dumps(review('lookup', ['内部查询'])) if kind == 'review'
-            else '角色首答')
+        def generate(messages, *, kind):
+            if kind == 'plan':
+                return json.dumps({'utterance_kind': 'other'})
+            if kind == 'lookup_plan':
+                return json.dumps({'needs_lookup': True,
+                    'information_needs': ['接口型号'], 'queries': ['内部查询']})
+            if kind == 'review':
+                data = json.loads(messages[-1]['content'])
+                return json.dumps({'checks': [{'need_id': 'n1', 'source_ids': [], 'gap': '接口型号未知'}],
+                    'queries': ['另一个内部查询'] if data['can_search'] else [], 'optional_reference': []})
+            return '角色首答'
+        return generate
     token = 'fixture-token-for-isolated-http-test-only'
     app = build_app(LifecycleStore(tmp_path / 'http.sqlite3'), {'fictional': token}, factory,
         system='角色', identity={'model': 'fixture'}, search=lambda *args: [], rag_planning=True)
     response = TestClient(app).post('/v1/chat/completions', headers={
         'Authorization': 'Bearer ' + token, 'Idempotency-Key': 'event'},
         json={'messages': [{'role': 'user', 'content': '接口型号？'}], 'stream': stream,
-              'rag_planning': False, 'stage': 'past_recovered'})
+              'rag_planning': False, 'stage': 'past_recovered', 'generate_answer': False})
     assert response.status_code == 200
     assert '内部查询' not in response.text
     if not stream:
@@ -192,3 +216,76 @@ def test_http_returns_only_first_role_answer_and_server_controls_feature(tmp_pat
     else:
         chunks = [json.loads(s[6:]) for s in response.text.splitlines() if s.startswith('data: {')]
         assert ''.join(c['choices'][0]['delta'].get('content', '') for c in chunks) == '角色首答'
+
+
+def test_rag_queries_are_independent_of_memory_classification(tmp_path):
+    searched = []
+    question = '这个工作都交给你了。'
+    _, trace = run(tmp_path, [review(required=['ability'])],
+        lambda q, h: searched.append(q) or [hit('ability')], text=question,
+        plan={'utterance_kind': 'temporary', 'queries': ['普通操作教程']},
+        lookup_plan={'needs_lookup': True, 'information_needs': ['亚托莉是否能独立完成这项工作'],
+                     'queries': ['亚托莉 工作能力 限制']})
+    assert searched == [question, '亚托莉 工作能力 限制']
+    assert [call['kind'] for call in trace['calls']] == ['plan', 'lookup_plan', 'review', 'answer']
+
+
+@pytest.mark.parametrize('bad', [
+    {'needs_lookup': False, 'information_needs': ['角色动机'], 'queries': []},
+    {'needs_lookup': True, 'information_needs': [], 'queries': ['角色']},
+    {'needs_lookup': 'true', 'information_needs': ['角色'], 'queries': ['角色']},
+    {'needs_lookup': True, 'information_needs': ['角色'], 'queries': ['a', 'b', 'c']},
+])
+def test_inconsistent_lookup_plan_is_not_silently_an_empty_success(tmp_path, bad):
+    _, trace = run(tmp_path, [review()], lambda *args: [], lookup_plan=bad)
+    assert trace['answer_plan']['stop_reason'] == 'invalid_lookup_plan'
+    assert trace['rag_request_plan']['validated'] is None
+    assert trace['answer_plan']['information_gaps']
+
+
+@pytest.mark.parametrize('checks', [
+    [],
+    [{'need_id': 'n1', 'source_ids': [], 'gap': ''}],
+    [{'need_id': 'n1', 'source_ids': ['invented'], 'gap': ''}],
+    [{'need_id': 'other', 'source_ids': ['school'], 'gap': ''}],
+])
+def test_empty_or_unbound_evidence_cannot_declare_sufficiency(tmp_path, checks):
+    raw = json.dumps({'checks': checks, 'queries': [], 'optional_reference': []})
+    _, trace = run(tmp_path, [raw], lambda *args: [hit()])
+    assert trace['answer_plan']['stop_reason'] == 'invalid_review'
+    assert not trace['answer_plan']['must_respond']
+    assert any('当前问题中的角色事实' in gap for gap in trace['answer_plan']['information_gaps'])
+
+
+def test_multiple_needs_must_each_be_covered_and_evidence_becomes_required():
+    needs = [{'need_id': 'n1', 'question': '主体'}, {'need_id': 'n2', 'question': '能力限制'}]
+    data = {'checks': [{'need_id': 'n1', 'source_ids': ['identity'], 'gap': ''},
+                       {'need_id': 'n2', 'source_ids': ['ability'], 'gap': ''}],
+            'queries': [], 'optional_reference': []}
+    parsed = parse_evidence_review(json.dumps(data), [hit('identity'), hit('ability')], needs, can_search=True)
+    assert parsed['must_respond'] == ['identity', 'ability']
+    data['checks'].pop()
+    with pytest.raises(ValueError, match='every information need'):
+        parse_evidence_review(json.dumps(data), [hit('identity'), hit('ability')], needs, can_search=True)
+
+
+def test_missing_fact_without_query_is_recorded_as_planning_failure(tmp_path):
+    _, trace = run(tmp_path, [review(gaps=['准确接口型号未知'])], lambda *args: [])
+    assert trace['answer_plan']['stop_reason'] == 'planner_no_query'
+    assert '准确接口型号未知' in trace['answer_plan']['information_gaps']
+    assert not trace['answer_plan']['must_respond']
+
+
+def test_reviewer_cannot_request_lookup_after_program_stopped():
+    raw = json.dumps({'checks': [{'need_id': 'n1', 'source_ids': [], 'gap': '型号未知'}],
+                      'queries': ['再次查询'], 'optional_reference': []})
+    with pytest.raises(ValueError, match='no longer available'):
+        parse_evidence_review(raw, [], [{'need_id': 'n1', 'question': '型号'}], can_search=False)
+
+
+def test_planner_only_diagnostic_never_substitutes_a_role_answer(tmp_path):
+    answer, trace = run(tmp_path, [review(required=['school'])], lambda *args: [hit()],
+                        generate_answer=False)
+    assert answer is None and trace['final'] is None
+    assert trace['answer_generation'] == 'not_run:planner_only'
+    assert not any(call['kind'] == 'answer' for call in trace['calls'])

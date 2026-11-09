@@ -12,12 +12,14 @@ class GeneratedText(str):
 
 
 def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_input_tokens=8192,
-                 planner_schema=False):
+                 planner_schema=False, base_only=False):
     import torch
     if type(max_input_tokens) is not int or max_input_tokens < 512:
         raise ValueError('server input token budget must be at least 512')
     if type(planner_schema) is not bool:
         raise ValueError('planner_schema must be a server boolean')
+    if type(base_only) is not bool or (base_only and hasattr(model, 'peft_config')):
+        raise ValueError('base-only planning requires a verified model without an adapter')
     seed, limit = options.get('seed', 17), options.get('max_tokens', 256)
     if type(seed) is not int:
         raise ValueError('integer seed required')
@@ -30,15 +32,17 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         raise ValueError('top_p must be finite and in (0,1]')
 
     def generate(messages, *, kind):
-        if kind not in {'plan', 'review', 'answer'}:
+        if kind not in {'plan', 'lookup_plan', 'review', 'answer'}:
             raise ValueError('unknown generation purpose')
+        if base_only and (kind == 'answer' or (kind == 'plan' and planner_adapter)):
+            raise ValueError('base-only diagnostics cannot generate role answers or enable an adapter')
         prompt = tokenizer.apply_chat_template(messages, tokenize=False,
                     add_generation_prompt=True, enable_thinking=False)
         inputs = tokenizer(prompt, return_tensors='pt')
         if inputs['input_ids'].shape[-1] > max_input_tokens:
             raise ValueError('conversation or memory inventory exceeds the server input token budget')
         inputs = inputs.to(model.device)
-        kwargs = dict(max_new_tokens=512 if kind in {'plan', 'review'} else limit,
+        kwargs = dict(max_new_tokens=512 if kind in {'plan', 'lookup_plan', 'review'} else limit,
                       do_sample=True, temperature=temperature, top_p=top_p,
                       repetition_penalty=1.1,
                       pad_token_id=tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, use_cache=True)
@@ -48,11 +52,11 @@ def hf_generator(tokenizer, model, lock, options, *, planner_adapter=False, max_
         if kind == 'plan' and planner_schema:
             from .schema import planner_constraint
             kwargs['prefix_allowed_tokens_fn'], constraint = planner_constraint(tokenizer)
-        disabled = kind == 'review' or (kind == 'plan' and not planner_adapter)
-        with lock, torch.inference_mode(), (model.disable_adapter() if disabled else nullcontext()):
+        disabled = kind in {'lookup_plan', 'review'} or (kind == 'plan' and not planner_adapter)
+        with lock, torch.inference_mode(), (model.disable_adapter() if disabled and not base_only else nullcontext()):
             actual_modes = {m.disable_adapters for m in model.modules()
                             if isinstance(getattr(m, 'disable_adapters', None), bool)}
-            if actual_modes != {disabled}:
+            if actual_modes != (set() if base_only else {disabled}):
                 raise ValueError('actual adapter state differs from requested generation mode')
             torch.manual_seed(seed)
             result = model.generate(**inputs, **kwargs)

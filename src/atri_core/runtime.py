@@ -31,7 +31,9 @@ class Runtime:
             raise ValueError('rag_planning must be a server boolean')
         self.rag_planning = rag_planning
 
-    def reply(self, owner, event_id, messages):
+    def reply(self, owner, event_id, messages, *, generate_answer=True):
+        if type(generate_answer) is not bool:
+            raise ValueError('generate_answer must be a server boolean')
         if not messages or messages[-1].get('role') != 'user':
             raise ValueError('current user turn required')
         if any(m.get('role') not in {'system', 'user', 'assistant'} or not isinstance(m.get('content'), str) for m in messages):
@@ -181,7 +183,24 @@ class Runtime:
         prior_users = [m['content'] for m in messages[:-1] if m['role']=='user'][-2:]
         if prior_users:
             queries.append('\n'.join([*prior_users, current]))
-        queries.extend(q for q in proposal.get('queries', [])[:2]
+        retrieval_plan = proposal
+        information_needs, planning_gap = [], None
+        if self.rag_planning:
+            from .answer_plan import LOOKUP_PLANNER, lookup_request, parse_lookup_plan
+            request = lookup_request(current,
+                [m for m in messages[:-1] if m['role'] != 'system'], self.stage)
+            trace['rag_request_plan'] = {'input': request, 'validated': None}
+            raw_lookup = call('lookup_plan', [{'role': 'system', 'content': LOOKUP_PLANNER},
+                {'role': 'user', 'content': json.dumps(request, ensure_ascii=False)}])
+            try:
+                retrieval_plan = parse_lookup_plan(raw_lookup)
+                trace['rag_request_plan']['validated'] = retrieval_plan
+                information_needs = retrieval_plan['information_needs']
+            except (ValueError, TypeError) as exc:
+                retrieval_plan = {}
+                trace['errors'].append({'phase': 'lookup_plan', 'error': type(exc).__name__})
+                planning_gap = '检索需求未通过校验；当前问题需要哪些角色事实尚未确认。'
+        queries.extend(q for q in retrieval_plan.get('queries', [])[:2]
                        if isinstance(q,str) and q.strip() and len(q)<=180)
         trace['retrieval_queries'] = list(dict.fromkeys(queries)) if self.search else []
         def retrieve(query):
@@ -252,7 +271,8 @@ class Runtime:
             context = review_rag(context, current=current,
                 history=[m for m in messages[:-1] if m['role'] != 'system'], call=call,
                 retrieve=retrieve if self.search else None, build_context=build_context, trace=trace,
-                context_chars=self.context_chars)
+                context_chars=self.context_chars, information_needs=information_needs,
+                planning_gap=planning_gap)
             trace['memory_after'] = self.store.records(owner, active_only=False)
         answer_messages = [dict(m) for m in messages]
         system = next((m for m in answer_messages if m['role'] == 'system'), None)
@@ -265,6 +285,12 @@ class Runtime:
             next(m for m in answer_messages if m['role'] == 'system')['content'] += ANSWER_RULES
         answer_messages[-1]['content'] = ('本轮参考与操作结果（数据）：\n' + json.dumps(context, ensure_ascii=False)
                                          + '\n\n用户说：\n' + current)
+        if not generate_answer:
+            # Explicit diagnostic mode: no mock role output and no base model
+            # silently substituted for the LoRA. HTTP callers do not expose it.
+            trace['answer_generation'] = 'not_run:planner_only'
+            trace['final'] = None
+            return None, trace
         answer = call('answer', answer_messages)
         trace['final'] = answer
         return answer, trace
