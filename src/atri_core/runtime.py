@@ -62,7 +62,12 @@ class Runtime:
         trace['memory_index'] = aliases
         planner_input = {'conversation': [m for m in messages[-9:] if m['role'] != 'system'],
                          'memory': inventory, 'story_stage': self.stage}
-        planner_messages = [{'role': 'system', 'content': PLANNER},
+        planner_prompt = PLANNER
+        if self.rag_planning:
+            from .answer_plan import ANSWER_ACTOR, ACTOR_PLANNING
+            planner_input['answer_actor'] = dict(ANSWER_ACTOR)
+            planner_prompt += ACTOR_PLANNING
+        planner_messages = [{'role': 'system', 'content': planner_prompt},
                             {'role': 'user', 'content': json.dumps(planner_input, ensure_ascii=False)}]
         proposal = {}
         # Capacity/model failures abort the request. They must not masquerade as
