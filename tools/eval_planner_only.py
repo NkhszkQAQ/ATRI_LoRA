@@ -120,7 +120,7 @@ def evaluate(tokenizer, model, *, root, script_source, cases_path, out, reranker
             plan = trace['answer_plan']
             required = {fact['source_id'] for fact in plan['must_respond']}
             checks = {
-                'needs_declared': bool(plan['information_needs']),
+                'needs_match_expectation': bool(plan['information_needs']) is case.get('expect_needs', True),
                 'expected_required_present': set(case['expected_required']) <= required,
                 'no_forbidden_sources': not set(case.get('forbidden_sources', [])) &
                     {hit['node_id'] for hit in trace['retrieved']},

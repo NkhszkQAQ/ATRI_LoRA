@@ -72,3 +72,31 @@ def test_failed_generation_preserves_actual_request_without_mock_answer(tmp_path
     assert '测试委托' in request['messages'][-1]['content']
     assert not (out / 'raw-model.jsonl').exists()
     assert json.loads((out / 'FAILURE.json').read_text())['model_calls'] == 0
+
+
+@pytest.mark.parametrize('expect_needs', [False, True])
+def test_no_lookup_passes_only_when_case_explicitly_expects_no_facts(tmp_path, monkeypatch, expect_needs):
+    import torch
+    module = evaluator()
+    root = Path(__file__).resolve().parents[1]
+    core, _ = module.modules(root)
+    outputs = {'plan': '{"utterance_kind":"other"}', 'lookup_plan': 'null',
+               'review': '{"source_ids":[],"gap":"","queries":[],"optional_reference":[]}'}
+    monkeypatch.setattr(core('inference'), 'hf_generator', lambda *args, **kwargs:
+                        lambda messages, *, kind: core('inference').GeneratedText(outputs[kind], {}))
+    monkeypatch.setattr(core('rag'), 'StageCorpus', lambda *args, **kwargs: SimpleNamespace(
+        search=lambda *args: [], search_current=lambda *args: [], source_hashes={}))
+    monkeypatch.setattr(torch.cuda, 'get_device_name', lambda index: 'unit-test: no GPU')
+    model = SimpleNamespace(is_loaded_in_4bit=True, config=SimpleNamespace(
+        model_type='qwen3', quantization_config={'load_in_4bit': True,
+            'bnb_4bit_quant_type': 'nf4', 'bnb_4bit_compute_dtype': 'bfloat16',
+            'bnb_4bit_use_double_quant': False}),
+        generation_config=SimpleNamespace(to_dict=lambda: {}), eval=lambda: None)
+    cases = tmp_path / 'cases.jsonl'
+    cases.write_text(json.dumps({'id': 'control', 'group': 'unit_test', 'stage': 'daily',
+        'user': '你以前的主人是谁？' if expect_needs else '你好',
+        'expected_required': [], 'expect_needs': expect_needs}) + '\n')
+    result = module.evaluate(None, model, root=root, script_source=tmp_path,
+        cases_path=cases, out=tmp_path / 'results', reranker=None)['results'][0]
+    assert result['program_checks']['needs_match_expectation'] is (not expect_needs)
+    assert result['program_checks_pass'] is (not expect_needs)

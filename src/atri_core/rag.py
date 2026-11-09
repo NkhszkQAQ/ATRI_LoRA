@@ -93,6 +93,11 @@ class StageCorpus:
                     self.cards.append({**card, 'allowed_stages': stages})
         self.source_hashes = {str(p.relative_to(root)): value[0] for p, value in verified.items()}
 
+    def query_topics(self):
+        """Verified index headings, not answer evidence or unfiltered facts."""
+        return [{'title': card['title'], 'allowed_stages': list(card['allowed_stages'])}
+                for card in self.cards]
+
     def search(self, query, history=()):
         """Primary retrieval for generated queries and combined history."""
         return self._search(query, allow_dense=False)

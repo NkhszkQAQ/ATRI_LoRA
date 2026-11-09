@@ -184,18 +184,34 @@ class Runtime:
         if prior_users:
             queries.append('\n'.join([*prior_users, current]))
         retrieval_plan = proposal
-        information_needs, planning_gap = [], None
+        information_needs, planning_gap, query_topics = [], None, []
         if self.rag_planning:
             from .answer_plan import LOOKUP_PLANNER, lookup_request, parse_lookup_plan
+            provider = getattr(self.search, '__self__', None)
+            topic_supplier = getattr(provider, 'query_topics', None)
+            if callable(topic_supplier):
+                for topic in topic_supplier():
+                    if self.stage not in topic.get('allowed_stages', []):
+                        continue
+                    title = topic.get('title')
+                    if not isinstance(title, str) or not title.strip() or len(title) > 160:
+                        raise ValueError('invalid trusted retrieval topic')
+                    if title not in query_topics:
+                        query_topics.append(title)
+                if len(query_topics) > 64 or sum(map(len, query_topics)) > 2000:
+                    raise ValueError('trusted retrieval topics exceed planner budget')
             request = lookup_request(current,
-                [m for m in messages[:-1] if m['role'] != 'system'], self.stage)
+                [m for m in messages[:-1] if m['role'] != 'system'], self.stage, topics=query_topics)
             trace['rag_request_plan'] = {'input': request, 'validated': None}
             raw_lookup = call('lookup_plan', [{'role': 'system', 'content': LOOKUP_PLANNER},
                 {'role': 'user', 'content': json.dumps(request, ensure_ascii=False)}])
             try:
-                retrieval_plan = parse_lookup_plan(raw_lookup)
+                retrieval_plan = parse_lookup_plan(raw_lookup, question=current,
+                                                  topics=request['available_topics'])
                 trace['rag_request_plan']['validated'] = retrieval_plan
                 information_needs = retrieval_plan['information_needs']
+                if not retrieval_plan['needs_lookup']:
+                    queries.clear()
             except (ValueError, TypeError) as exc:
                 retrieval_plan = {}
                 trace['errors'].append({'phase': 'lookup_plan', 'error': type(exc).__name__})
@@ -272,7 +288,7 @@ class Runtime:
                 history=[m for m in messages[:-1] if m['role'] != 'system'], call=call,
                 retrieve=retrieve if self.search else None, build_context=build_context, trace=trace,
                 context_chars=self.context_chars, information_needs=information_needs,
-                planning_gap=planning_gap)
+                planning_gap=planning_gap, query_topics=query_topics)
             trace['memory_after'] = self.store.records(owner, active_only=False)
         answer_messages = [dict(m) for m in messages]
         system = next((m for m in answer_messages if m['role'] == 'system'), None)

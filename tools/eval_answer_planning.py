@@ -102,9 +102,15 @@ def main():
                 [root/'rag'/n for n in ('character_facts.json', 'story_stages.json', 'story_daily_extended.json')],
                 stage, reranker=ranker)
         corpus = corpora[stage]
-        archived, archived_trace, decisions = None, None, None
+        archived, archived_trace, decisions, active_review = None, None, None, None
         if args.mode == 'replay':
-            decisions = iter(fixtures[case['id']])
+            fixture = fixtures[case['id']]
+            if (not isinstance(fixture, dict) or set(fixture) != {'source_support', 'rounds'}
+                    or not isinstance(fixture['source_support'], dict)
+                    or any(type(value) is not bool for value in fixture['source_support'].values())
+                    or not isinstance(fixture['rounds'], list)):
+                raise ValueError('replay requires explicit source_support and rounds fixtures')
+            decisions = iter(fixture['rounds'])
             key = (case.get('historical_case'), args.seed)
             archived = historical.get(key)
             if case.get('historical_case') and not archived:
@@ -116,6 +122,7 @@ def main():
                 if archived['request']['messages'][-1]['content'] != case['user']:
                     raise ValueError('replay utterance differs from archived question')
         def generate(messages, *, kind):
+            nonlocal active_review
             if generate_real:
                 raw = generate_real(messages, kind=kind)
                 identity['model_calls'] += 1
@@ -127,7 +134,21 @@ def main():
             if kind == 'lookup_plan':
                 return json.dumps(lookup_fixtures[case['id']], ensure_ascii=False)
             if kind == 'review':
-                return json.dumps(next(decisions), ensure_ascii=False)
+                request = json.loads(messages[-1]['content'])
+                if request['mode'] == 'source_support':
+                    return json.dumps(fixture['source_support'][request['candidate']['node_id']])
+                if active_review is None:
+                    active_review = next(decisions)
+                if request['mode'] == 'evidence_check':
+                    result = active_review['evidence']
+                    if result['sufficient']:
+                        active_review = None
+                elif request['mode'] == 'missing_info':
+                    result = active_review['missing']
+                    active_review = None
+                else:
+                    raise ValueError('unknown replay review phase')
+                return json.dumps(result, ensure_ascii=False)
             # An old answer is preserved for inspection only. It was generated
             # with a different input. Empty variants mean no role answer exists.
             return archived['final'] if archived else ''
