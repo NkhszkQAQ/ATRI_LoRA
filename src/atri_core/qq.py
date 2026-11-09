@@ -15,6 +15,18 @@ from .bridge import detach_context, identity
 EVENT = re.compile(r'\n<ATRI_EVENT_V12>([A-Za-z0-9_=-]+)\.([0-9a-f]{64})</ATRI_EVENT_V12>')
 
 
+def _plain_text(content):
+    """Accept OpenAI text parts without dropping media or changing signed text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and all(
+            isinstance(part, dict) and set(part) == {'type', 'text'}
+            and part['type'] == 'text' and isinstance(part['text'], str)
+            for part in content):
+        return ''.join(part['text'] for part in content)
+    raise ValueError('V1.2 QQ adapter accepts text conversations only')
+
+
 def attach_event(system, event, prompt, secret, *, now=None):
     owner = identity(event)
     message = getattr(event, 'message_obj', None)
@@ -35,6 +47,10 @@ def resolve_event(body, secret, *, context_window=None, now=None):
         messages = body.get('messages')
         if not isinstance(messages, list) or not messages or any(not isinstance(m,dict) for m in messages):
             raise ValueError('messages required')
+        # AstrBot archives user text as content-part arrays. Normalize a copy
+        # before authentication; the flattened current text must still match its
+        # signed hash, and the caller's persistent archive remains untouched.
+        messages = [{**m, 'content': _plain_text(m.get('content'))} for m in messages]
         messages, context = detach_context(messages, secret, now=now)
         if context is None or not context['private']:
             raise ValueError('signed private QQ context required')
